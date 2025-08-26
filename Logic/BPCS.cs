@@ -78,7 +78,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION 
                         FROM C20A237W.VENLX835F.ITH ITH 
-                        WHERE (ITH.TTYPE='R') AND (ITH.TTDTE ="+ DateTime.Now.ToString("yyyyMMdd") +@") AND (ITH.TWHS='PT ') AND (ITH.THTIME>=60000 And ITH.THTIME<180000) 
+                        WHERE (ITH.TTYPE='R') AND (ITH.TTDTE ="+ DateTime.Now.ToString("yyyyMMdd") +@") AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=60000 And ITH.THTIME<180000) 
                         GROUP BY ITH.THWRKC, ITH.TPROD 
                         ORDER BY ITH.THWRKC";
             DataReaderBPCS = CommandBPCS.ExecuteReader();
@@ -115,7 +115,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION
                         FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='PT ') AND (ITH.THTIME>=0 And ITH.THTIME<60000))
+                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=0 And ITH.THTIME<60000))
                         GROUP BY ITH.THWRKC, ITH.TPROD
                         ORDER BY ITH.THWRKC
                         ";
@@ -141,7 +141,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION
                         FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.ToString("yyyyMMdd") +@"') AND (ITH.TWHS='PT ') AND (ITH.THTIME>=180000 And ITH.THTIME< 235959))
+                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.ToString("yyyyMMdd") +@"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME< 235959))
                         GROUP BY ITH.THWRKC, ITH.TPROD
                         ";
             DataReaderBPCS = CommandBPCS.ExecuteReader();
@@ -191,7 +191,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION
                         FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.AddDays(+1).ToString("yyyyMMdd") +@"') AND (ITH.TWHS='PT ') AND (ITH.THTIME>=180000 And ITH.THTIME<=235959))
+                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.AddDays(+1).ToString("yyyyMMdd") +@"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME<=235959))
                         GROUP BY ITH.THWRKC, ITH.TPROD
                         ";
             DataReaderBPCS = CommandBPCS.ExecuteReader();
@@ -364,7 +364,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
                         FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE =" + DateTime.Now.ToString("yyyyMMdd") + @") AND (ITH.TWHS='PT ') AND (ITH.THTIME >=60000 And ITH.THTIME<=180000))
+                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE =" + DateTime.Now.ToString("yyyyMMdd") + @") AND (ITH.TWHS='VVA ') AND (ITH.THTIME >=60000 And ITH.THTIME<=180000))
                         ORDER BY ITH.THWRKC";
             DataReaderBPCS = CommandBPCS.ExecuteReader();
             dataTable.Load(DataReaderBPCS);
@@ -429,7 +429,7 @@ namespace ConsultasSQL.Logic{
                 CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
                         FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.AddDays(+1).ToString("yyyyMMdd") + @"') AND (ITH.TWHS='PT ') AND (ITH.THTIME>=180000 And ITH.THTIME < 240000))
+                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.AddDays(+1).ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME < 240000))
                         ORDER BY ITH.THWRKC";
                 DataReaderBPCS = CommandBPCS.ExecuteReader();
             //* si band es falso estamos de 11:59 am hasta 6 am
@@ -438,7 +438,7 @@ namespace ConsultasSQL.Logic{
                 CommandBPCS.CommandText = @"
                         SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
                         FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='PT ') AND (ITH.THTIME>=180000 And ITH.THTIME < 240000))
+                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME < 240000))
                         ORDER BY ITH.THWRKC";
                 DataReaderBPCS = CommandBPCS.ExecuteReader();
             }
@@ -454,7 +454,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                 SELECT ITH.TPROD, IIM.IDESC, Sum(ITH.TQTY)
                 FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTDTE="+ DateTime.Now.ToString("yyyyMMdd") + @") AND (ITH.TTYPE='R') AND (ITH.TWHS='PT'))
+                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTDTE="+ DateTime.Now.ToString("yyyyMMdd") + @") AND (ITH.TTYPE='R') AND (ITH.TWHS='VVA'))
                 GROUP BY ITH.TPROD, IIM.IDESC";
             DataReaderBPCS = CommandBPCS.ExecuteReader();
             dataTable.Load(DataReaderBPCS);
@@ -477,7 +477,7 @@ namespace ConsultasSQL.Logic{
                 FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
                 WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTDTE='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TTYPE='R') AND (ITH.THWRKC='"+ centroCosto + @"'))
                 GROUP BY ITH.THWRKC, ITH.TPROD, IIM.IDESC";
-                // AND (ITH.TWHS='PT') 
+                // AND (ITH.TWHS='VVA') 
             DataReaderBPCS = CommandBPCS.ExecuteReader();
             dataTable.Load(DataReaderBPCS);
             foreach (DataRow row in dataTable.Rows)
@@ -497,7 +497,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.CommandText = @"
                 SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
                 FROM C20A237W.VENLX835F.IIM IIM, C20A237W.VENLX835F.ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='PT ') AND (ITH.THTIME >= 0 And ITH.THTIME < 60000))
+                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME >= 0 And ITH.THTIME < 60000))
                 ORDER BY ITH.THWRKC";
             DataReaderBPCS = CommandBPCS.ExecuteReader();
             dataTable.Load(DataReaderBPCS);
