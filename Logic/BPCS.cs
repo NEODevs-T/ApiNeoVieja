@@ -15,10 +15,10 @@ namespace ConsultasSQL.Logic{
         private DBconexionBPCS conexionBPCS = new DBconexionBPCS();
         private OleDbCommand CommandBPCS = new OleDbCommand();
         OleDbDataReader? DataReaderBPCS;
-        private DbSIPDATABASE conexionSIPDATABASE = new DbSIPDATABASE();
-        private SqlCommand comandSIPDATABASE = new SqlCommand();
+        private DbSIPDATABASE2 conexionSIPDATABASE2 = new DbSIPDATABASE2();
+        private SqlCommand comandSIPDATABASE2 = new SqlCommand();
         private Gespline gespline = new Gespline();
-        SqlDataReader? DataReaderSIPDATABASE;
+        SqlDataReader? DataReaderSIPDATABASE2;
 
         public Dictionary<string,Dictionary<string,int>> ObjetivoPorHoraSegunProducto(int tiempo){
             Dictionary<string,Dictionary<string,int>> produccion;

@@ -4,10 +4,10 @@ using Microsoft.Data.SqlClient;
 
 namespace ConsultasSQL.Model
 {
-    public class DbSIPDATABASE
+    public class DbSIPDATABASE2
     {
-        private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBVEN01; Initial Catalog = SIPDATABASE; TrustServerCertificate=True;Persist Security Info=True;User ID=portaluser;Password= PORT34erySADF");
-        //private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBVEN01; Initial Catalog = SIPDATABASE;User ID=portaluser;Password=PORT34erySADF ");
+        private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBVEN01; Initial Catalog = SIPDATABASE2; TrustServerCertificate=True;Persist Security Info=True;User ID=portaluser;Password= PORT34erySADF");
+        //private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBVEN01; Initial Catalog = SIPDATABASE2;User ID=portaluser;Password=PORT34erySADF ");
         // // Conexion para los centros y ordenes de producción
         public SqlConnection OpeAbrirConex()
         {

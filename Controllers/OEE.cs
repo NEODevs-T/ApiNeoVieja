@@ -21,14 +21,14 @@ namespace ConsultasSQL.Controllers{
         OleDbDataReader? DataReaderBPCS;
 
 
-        private DbSIPDATABASE conexionSIPDATABASE = new DbSIPDATABASE();
-        private SqlCommand comandSIPDATABASE = new SqlCommand();
+        private DbSIPDATABASE2 conexionSIPDATABASE2 = new DbSIPDATABASE2();
+        private SqlCommand comandSIPDATABASE2 = new SqlCommand();
 
         private BPCS bpcs = new BPCS();
 
         private Gespline gespline = new Gespline();
 
-        SqlDataReader? DataReaderSIPDATABASE;
+        SqlDataReader? DataReaderSIPDATABASE2;
         
 
         [HttpGet]
