@@ -250,260 +250,434 @@ namespace ConsultasSQL.Logic{
             return tiempoEjecutado;
         }
 
-        public List<List<string>> obtenerParadasActuales1turno(string centroCosto){
-            var dataTable = new DataTable();
-            List<string> codigos = new List<string>();
-            List<string> parada = new List<string>();
-            List<string> tiempo = new List<string>();
-            List<string> idRegistro = new List<string>();
-            List<string> idArea = new List<string>();   
-            List<string> Area = new List<string>();
-            List<List<string>> datos = new List<List<string>>(4);
+        public List<List<string>> obtenerParadasActuales1turno(string centroCosto)
+{
+    var dataTable = new DataTable();
+    List<string> codigos = new List<string>();
+    List<string> parada = new List<string>();
+    List<string> tiempo = new List<string>();
+    List<string> idRegistro = new List<string>();
+    List<string> idArea = new List<string>();   
+    List<string> Area = new List<string>();
+    List<List<string>> datos = new List<List<string>>(4);
 
-
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                SELECT PARADASEJECUTADAS.CODIGOREGISTRSO,GRUPOSDEPARADAS.CODIGOGRUPOPARADA, PARADAS.NOMBREPARADA ,((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 1440 AS [Tiempo Perdido],Partes.parteNombre,Partes.Codigo
-                FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
-                INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
-                INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
-                INNER JOIN dbo.GRUPOSDEPARADAS ON dbo.GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
-                LEFT JOIN dbo.Partes ON dbo.Partes.Codigo = UPPER(SUBSTRING ([dbo].[PARADASEJECUTADAS].[CODIGOPARADA],0,3))
-                WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '05:50:00' AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00' AND DATENAME(HOUR, CUADROPNFINAL.FECHAENTRADA) < 17 AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' AND CUADROPNFINAL.CODIGOPROCESO = " + centroCosto + @"
-                ORDER BY  [Tiempo Perdido] DESC;";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows){
-                idRegistro.Add(row["CODIGOREGISTRSO"].ToString());
-                codigos.Add(row["CODIGOGRUPOPARADA"].ToString());
-                parada.Add(row["NOMBREPARADA"].ToString());
-                tiempo.Add(row["Tiempo Perdido"].ToString());
-                idArea.Add(row["parteNombre"].ToString());
-                Area.Add(row["Codigo"].ToString());
-            }
-            datos.Add(idRegistro);
-            datos.Add(codigos);
-            datos.Add(parada);
-            datos.Add(tiempo);
-            datos.Add(idArea);
-            datos.Add(Area);
-            return datos;
-        }
-        
-        public List<List<string>> obtenerParadasActuales1turnoAgrupados(string centroCosto){
-            var dataTable = new DataTable();
-            List<string> CODIGOPARADA = new List<string>();
-            List<string> CodigoParte = new List<string>();
-            List<string> NOMBREPARADA = new List<string>();
-            List<string> parteNombre = new List<string>();
-            List<string> TiempoPerdido = new List<string>();
-            List<string> codigoGrupoParada = new List<string>();
-            List<List<string>> datos = new List<List<string>>(5);
-
-
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                SELECT PARADAS.CODIGOPARADA,GRUPOSDEPARADAS.CODIGOGRUPOPARADA,Area.ACodGes,PARADAS.NOMBREPARADA,Area.AParte ,sum((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 1440 AS [Tiempo Perdido]
-                FROM SIPDATABASE2.dbo.ENTRADAEJECUCION 
-                INNER JOIN SIPDATABASE2.dbo.TUPLAEJECUCION ON TUPLAEJECUCION.CODIGOTUPLA = ENTRADAEJECUCION.CODIGOTUPLA
-                INNER JOIN SIPDATABASE2.dbo.PROCESO ON PROCESO.CODIGOPROCESO = TUPLAEJECUCION.CODIGOPROCESO
-                INNER JOIN SIPDATABASE2.dbo.PARADASEJECUTADAS ON PARADASEJECUTADAS.CODIGOENTRADAEJECUCION = ENTRADAEJECUCION.CODIGOENTRADAEJECUCION
-                INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADAS.CODIGOPARADA = PARADASEJECUTADAS.CODIGOPARADA 
-                INNER JOIN SIPDATABASE2.dbo.GRUPOSDEPARADAS ON GRUPOSDEPARADAS.CODIGOGRUPOPARADA  = PARADAS.CODIGOGRUPOPARADA
-                LEFT JOIN SIPDATABASE2.dbo.Area ON Area.ACodGes = UPPER(SUBSTRING (PARADAS.CODIGOPARADA,0,5))
-                WHERE ENTRADAEJECUCION.FECHAENTRADA  >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '05:50:00' AND ENTRADAEJECUCION.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00' AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' AND PROCESO.CODIGOPROCESO = " + centroCosto + @"
-                GROUP BY PARADAS.CODIGOPARADA,GRUPOSDEPARADAS.CODIGOGRUPOPARADA,Area.ACodGes,PARADAS.NOMBREPARADA,Area.AParte
-                ORDER BY  [Tiempo Perdido] DESC;";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows){
-                CODIGOPARADA.Add(row["CODIGOPARADA"].ToString());
-                codigoGrupoParada.Add(row["CODIGOGRUPOPARADA"].ToString());
-                CodigoParte.Add(row["ACodGes"].ToString());
-                NOMBREPARADA.Add(row["NOMBREPARADA"].ToString());
-                parteNombre.Add(row["AParte"].ToString());
-                TiempoPerdido.Add(row["Tiempo Perdido"].ToString());
-            }
-            datos.Add(CODIGOPARADA);
-            datos.Add(codigoGrupoParada);
-            datos.Add(CodigoParte);
-            datos.Add(NOMBREPARADA);
-            datos.Add(parteNombre);
-            datos.Add(TiempoPerdido);
-            return datos;
-        }
-
-            public List<List<string>> obtenerParadasActuales2turnoAntesDeLas0am(string centroCosto){
-            var dataTable = new DataTable();
-            List<string> codigos = new List<string>();
-            List<string> parada = new List<string>();
-            List<string> tiempo = new List<string>();
-            List<string> idRegistro = new List<string>();
-            List<string> idArea = new List<string>();
-            List<string> Area = new List<string>();
-            List<List<string>> datos = new List<List<string>>(4);
-
-
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                SELECT PARADASEJECUTADAS.CODIGOREGISTRSO,GRUPOSDEPARADAS.CODIGOGRUPOPARADA, PARADAS.NOMBREPARADA ,((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 1440 AS [Tiempo Perdido],Partes.parteNombre,Partes.Codigo
-                FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
-                INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
-                INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
-                INNER JOIN dbo.GRUPOSDEPARADAS ON dbo.GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
-                INNER JOIN dbo.Partes ON dbo.Partes.Codigo = UPPER(SUBSTRING ([dbo].[PARADASEJECUTADAS].[CODIGOPARADA],0,3))
-                WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00' AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '06:00:00' AND DATENAME(HOUR, CUADROPNFINAL.FECHAENTRADA) >= 17 AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' AND CUADROPNFINAL.CODIGOPROCESO = "+ centroCosto + @"
-                ORDER BY  [Tiempo Perdido] DESC;";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows){
-                idRegistro.Add(row["CODIGOREGISTRSO"].ToString());
-                codigos.Add(row["CODIGOGRUPOPARADA"].ToString());
-                parada.Add(row["NOMBREPARADA"].ToString());
-                tiempo.Add(row["Tiempo Perdido"].ToString());
-                idArea.Add(row["parteNombre"].ToString());
-                Area.Add(row["Codigo"].ToString());
-            }
-            datos.Add(idRegistro);
-            datos.Add(codigos);
-            datos.Add(parada);
-            datos.Add(tiempo);
-            datos.Add(idArea);
-            datos.Add(Area);
-            return datos;
-        }
-
-        public List<List<string>> obtenerParadasActuales2turnoAntesDeLas0amAgupados(string centroCosto){
-            var dataTable = new DataTable();
-            List<string> CODIGOPARADA = new List<string>();
-            List<string> CodigoParte = new List<string>();
-            List<string> NOMBREPARADA = new List<string>();
-            List<string> parteNombre = new List<string>();
-            List<string> TiempoPerdido = new List<string>();
-            List<string> codigoGrupoParada = new List<string>();
-            List<List<string>> datos = new List<List<string>>(4);
-
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            PARADASEJECUTADAS.CODIGOREGISTRSO,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA, 
+            PARADAS.NOMBREPARADA,
+            CASE 
+                WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                THEN 1440
+                ELSE PARADASEJECUTADAS.DEMORAPARADA * 60
+            END AS [Tiempo Perdido],
+            Partes.parteNombre,
+            Partes.Codigo
+        FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
+        INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL 
+            ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
+        INNER JOIN dbo.GRUPOSDEPARADAS 
+            ON dbo.GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
+        LEFT JOIN dbo.Partes 
+            ON dbo.Partes.Codigo = UPPER(SUBSTRING ([dbo].[PARADASEJECUTADAS].[CODIGOPARADA],0,3))
+        WHERE 
+            CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '05:50:00' 
+            AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00' 
+            AND DATENAME(HOUR, CUADROPNFINAL.FECHAENTRADA) < 17 
+            AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' 
+            AND CUADROPNFINAL.CODIGOPROCESO = " + centroCosto + @"
+        ORDER BY [Tiempo Perdido] DESC;";
     
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                SELECT PARADAS.CODIGOPARADA,GRUPOSDEPARADAS.CODIGOGRUPOPARADA,Area.ACodGes,PARADAS.NOMBREPARADA,Area.AParte ,sum((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 1440 AS [Tiempo Perdido]
-                FROM SIPDATABASE2.dbo.ENTRADAEJECUCION
-                INNER JOIN SIPDATABASE2.dbo.TUPLAEJECUCION ON TUPLAEJECUCION.CODIGOTUPLA = ENTRADAEJECUCION.CODIGOTUPLA
-                INNER JOIN SIPDATABASE2.dbo.PROCESO ON PROCESO.CODIGOPROCESO = TUPLAEJECUCION.CODIGOPROCESO
-                INNER JOIN SIPDATABASE2.dbo.PARADASEJECUTADAS ON PARADASEJECUTADAS.CODIGOENTRADAEJECUCION = ENTRADAEJECUCION.CODIGOENTRADAEJECUCION
-                INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADAS.CODIGOPARADA = PARADASEJECUTADAS.CODIGOPARADA 
-                INNER JOIN SIPDATABASE2.dbo.GRUPOSDEPARADAS ON GRUPOSDEPARADAS.CODIGOGRUPOPARADA  = PARADAS.CODIGOGRUPOPARADA
-                LEFT JOIN SIPDATABASE2.dbo.Area ON Area.ACodGes = UPPER(SUBSTRING (PARADAS.CODIGOPARADA,0,5))
-                WHERE ENTRADAEJECUCION.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '17:50:00' AND ENTRADAEJECUCION.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '06:00:00' AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' AND PROCESO.CODIGOPROCESO = "+ centroCosto + @"
-                GROUP BY  PARADAS.CODIGOPARADA,GRUPOSDEPARADAS.CODIGOGRUPOPARADA,Area.ACodGes,PARADAS.NOMBREPARADA,Area.AParte
-                ORDER BY  [Tiempo Perdido] DESC;";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows){
-                CODIGOPARADA.Add(row["CODIGOPARADA"].ToString());
-                codigoGrupoParada.Add(row["CODIGOGRUPOPARADA"].ToString());
-                CodigoParte.Add(row["ACodGes"].ToString());
-                NOMBREPARADA.Add(row["NOMBREPARADA"].ToString());
-                parteNombre.Add(row["AParte"].ToString());
-                TiempoPerdido.Add(row["Tiempo Perdido"].ToString());
-            }
-            datos.Add(CODIGOPARADA);
-            datos.Add(codigoGrupoParada);
-            datos.Add(CodigoParte);
-            datos.Add(NOMBREPARADA);
-            datos.Add(parteNombre);
-            datos.Add(TiempoPerdido);
-            return datos;
-        }
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
 
-        public List<List<string>> obtenerParadasActuales2turnoDespuesDeLas0amAgrupados(string centroCosto){
-            var dataTable = new DataTable();
-            List<string> CODIGOPARADA = new List<string>();
-            List<string> CodigoParte = new List<string>();
-            List<string> NOMBREPARADA = new List<string>();
-            List<string> parteNombre = new List<string>();
-            List<string> TiempoPerdido = new List<string>();
-            List<string> codigoGrupoParada = new List<string>();
-            List<List<string>> datos = new List<List<string>>(4);
+    foreach (DataRow row in dataTable.Rows)
+    {
+        idRegistro.Add(row["CODIGOREGISTRSO"].ToString());
+        codigos.Add(row["CODIGOGRUPOPARADA"].ToString());
+        parada.Add(row["NOMBREPARADA"].ToString());
+        tiempo.Add(row["Tiempo Perdido"].ToString());
+        idArea.Add(row["parteNombre"].ToString());
+        Area.Add(row["Codigo"].ToString());
+    }
+
+    datos.Add(idRegistro);
+    datos.Add(codigos);
+    datos.Add(parada);
+    datos.Add(tiempo);
+    datos.Add(idArea);
+    datos.Add(Area);
+
+    return datos;
+}
+
+        
+        public List<List<string>> obtenerParadasActuales1turnoAgrupados(string centroCosto)
+{
+    var dataTable = new DataTable();
+    List<string> CODIGOPARADA = new List<string>();
+    List<string> CodigoParte = new List<string>();
+    List<string> NOMBREPARADA = new List<string>();
+    List<string> parteNombre = new List<string>();
+    List<string> TiempoPerdido = new List<string>();
+    List<string> codigoGrupoParada = new List<string>();
+    List<List<string>> datos = new List<List<string>>(5);
+
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            PARADAS.CODIGOPARADA,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA,
+            Area.ACodGes,
+            PARADAS.NOMBREPARADA,
+            Area.AParte,
+            SUM(
+                CASE 
+                    WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                    THEN 1440
+                    ELSE PARADASEJECUTADAS.DEMORAPARADA * 60
+                END
+            ) AS [Tiempo Perdido]
+        FROM SIPDATABASE2.dbo.ENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.TUPLAEJECUCION 
+            ON TUPLAEJECUCION.CODIGOTUPLA = ENTRADAEJECUCION.CODIGOTUPLA
+        INNER JOIN SIPDATABASE2.dbo.PROCESO 
+            ON PROCESO.CODIGOPROCESO = TUPLAEJECUCION.CODIGOPROCESO
+        INNER JOIN SIPDATABASE2.dbo.PARADASEJECUTADAS 
+            ON PARADASEJECUTADAS.CODIGOENTRADAEJECUCION = ENTRADAEJECUCION.CODIGOENTRADAEJECUCION
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADAS.CODIGOPARADA = PARADASEJECUTADAS.CODIGOPARADA 
+        INNER JOIN SIPDATABASE2.dbo.GRUPOSDEPARADAS 
+            ON GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
+        LEFT JOIN SIPDATABASE2.dbo.Area 
+            ON Area.ACodGes = UPPER(SUBSTRING(PARADAS.CODIGOPARADA,0,5))
+        WHERE 
+            ENTRADAEJECUCION.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '05:50:00' 
+            AND ENTRADAEJECUCION.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00' 
+            AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' 
+            AND PROCESO.CODIGOPROCESO = " + centroCosto + @"
+        GROUP BY 
+            PARADAS.CODIGOPARADA,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA,
+            Area.ACodGes,
+            PARADAS.NOMBREPARADA,
+            Area.AParte
+        ORDER BY [Tiempo Perdido] DESC;";
+    
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        CODIGOPARADA.Add(row["CODIGOPARADA"].ToString());
+        codigoGrupoParada.Add(row["CODIGOGRUPOPARADA"].ToString());
+        CodigoParte.Add(row["ACodGes"].ToString());
+        NOMBREPARADA.Add(row["NOMBREPARADA"].ToString());
+        parteNombre.Add(row["AParte"].ToString());
+        TiempoPerdido.Add(row["Tiempo Perdido"].ToString());
+    }
+
+    datos.Add(CODIGOPARADA);
+    datos.Add(codigoGrupoParada);
+    datos.Add(CodigoParte);
+    datos.Add(NOMBREPARADA);
+    datos.Add(parteNombre);
+    datos.Add(TiempoPerdido);
+
+    return datos;
+}
 
 
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                SELECT PARADAS.CODIGOPARADA,GRUPOSDEPARADAS.CODIGOGRUPOPARADA,Area.ACodGes,PARADAS.NOMBREPARADA,Area.AParte ,sum((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 1440 AS [Tiempo Perdido]
-                FROM SIPDATABASE2.dbo.ENTRADAEJECUCION 
-                INNER JOIN SIPDATABASE2.dbo.TUPLAEJECUCION ON TUPLAEJECUCION.CODIGOTUPLA = ENTRADAEJECUCION.CODIGOTUPLA
-                INNER JOIN SIPDATABASE2.dbo.PROCESO ON PROCESO.CODIGOPROCESO = TUPLAEJECUCION.CODIGOPROCESO
-                INNER JOIN SIPDATABASE2.dbo.PARADASEJECUTADAS ON PARADASEJECUTADAS.CODIGOENTRADAEJECUCION = ENTRADAEJECUCION.CODIGOENTRADAEJECUCION
-                INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADAS.CODIGOPARADA = PARADASEJECUTADAS.CODIGOPARADA 
-                INNER JOIN SIPDATABASE2.dbo.GRUPOSDEPARADAS ON GRUPOSDEPARADAS.CODIGOGRUPOPARADA  = PARADAS.CODIGOGRUPOPARADA
-                LEFT JOIN SIPDATABASE2.dbo.Area ON Area.ACodGes = UPPER(SUBSTRING (PARADAS.CODIGOPARADA,0,5))
-                WHERE ENTRADAEJECUCION.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),-1) + '17:50:00' AND ENTRADAEJECUCION.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '06:00:00' AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' AND PROCESO.CODIGOPROCESO = "+ centroCosto + @"
-                GROUP BY PARADAS.CODIGOPARADA,GRUPOSDEPARADAS.CODIGOGRUPOPARADA,Area.ACodGes,PARADAS.NOMBREPARADA,Area.AParte
-                ORDER BY  [Tiempo Perdido] DESC;";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows){
-                CODIGOPARADA.Add(row["CODIGOPARADA"].ToString());
-                codigoGrupoParada.Add(row["CODIGOGRUPOPARADA"].ToString());
-                CodigoParte.Add(row["ACodGes"].ToString());
-                NOMBREPARADA.Add(row["NOMBREPARADA"].ToString());
-                parteNombre.Add(row["AParte"].ToString());
-                TiempoPerdido.Add(row["Tiempo Perdido"].ToString());
-            }
-            datos.Add(CODIGOPARADA);
-            datos.Add(codigoGrupoParada);
-            datos.Add(CodigoParte);
-            datos.Add(NOMBREPARADA);
-            datos.Add(parteNombre);
-            datos.Add(TiempoPerdido);
-            return datos;
-        }
+            public List<List<string>> obtenerParadasActuales2turnoAntesDeLas0am(string centroCosto)
+{
+    var dataTable = new DataTable();
+    List<string> codigos = new List<string>();
+    List<string> parada = new List<string>();
+    List<string> tiempo = new List<string>();
+    List<string> idRegistro = new List<string>();
+    List<string> idArea = new List<string>();
+    List<string> Area = new List<string>();
+    List<List<string>> datos = new List<List<string>>(4);
 
-        public List<List<string>> obtenerParadasActuales2turnoDespuesDeLas0am(string centroCosto){
-            var dataTable = new DataTable();
-            List<string> codigos = new List<string>();
-            List<string> parada = new List<string>();
-            List<string> tiempo = new List<string>();
-            List<string> idRegistro = new List<string>();
-            List<string> idArea = new List<string>();
-            List<string> Area = new List<string>();
-            List<List<string>> datos = new List<List<string>>(4);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            PARADASEJECUTADAS.CODIGOREGISTRSO,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA, 
+            PARADAS.NOMBREPARADA,
+            CASE 
+                WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                THEN 1440
+                ELSE PARADASEJECUTADAS.DEMORAPARADA * 60
+            END AS [Tiempo Perdido],
+            Partes.parteNombre,
+            Partes.Codigo
+        FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
+        INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL 
+            ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
+        INNER JOIN dbo.GRUPOSDEPARADAS 
+            ON dbo.GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
+        INNER JOIN dbo.Partes 
+            ON dbo.Partes.Codigo = UPPER(SUBSTRING([dbo].[PARADASEJECUTADAS].[CODIGOPARADA],0,3))
+        WHERE 
+            CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00' 
+            AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '06:00:00' 
+            AND DATENAME(HOUR, CUADROPNFINAL.FECHAENTRADA) >= 17 
+            AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' 
+            AND CUADROPNFINAL.CODIGOPROCESO = " + centroCosto + @"
+        ORDER BY [Tiempo Perdido] DESC;";
+    
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        idRegistro.Add(row["CODIGOREGISTRSO"].ToString());
+        codigos.Add(row["CODIGOGRUPOPARADA"].ToString());
+        parada.Add(row["NOMBREPARADA"].ToString());
+        tiempo.Add(row["Tiempo Perdido"].ToString());
+        idArea.Add(row["parteNombre"].ToString());
+        Area.Add(row["Codigo"].ToString());
+    }
+
+    datos.Add(idRegistro);
+    datos.Add(codigos);
+    datos.Add(parada);
+    datos.Add(tiempo);
+    datos.Add(idArea);
+    datos.Add(Area);
+
+    return datos;
+}
 
 
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                SELECT PARADASEJECUTADAS.CODIGOREGISTRSO,GRUPOSDEPARADAS.CODIGOGRUPOPARADA, PARADAS.NOMBREPARADA ,((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 1440 AS [Tiempo Perdido],Partes.parteNombre,Partes.Codigo
-                FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
-                INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
-                INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
-                INNER JOIN dbo.GRUPOSDEPARADAS ON dbo.GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
-                INNER JOIN dbo.Partes ON dbo.Partes.Codigo = UPPER(SUBSTRING ([dbo].[PARADASEJECUTADAS].[CODIGOPARADA],0,3))
-				WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),-1) + '18:00:00' AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '06:00:00' AND DATENAME(HOUR, CUADROPNFINAL.FECHAENTRADA) >= 17 AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' AND CUADROPNFINAL.CODIGOPROCESO = "+ centroCosto +@"
-                ORDER BY  [Tiempo Perdido] DESC;";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows){
-                idRegistro.Add(row["CODIGOREGISTRSO"].ToString());
-                codigos.Add(row["CODIGOGRUPOPARADA"].ToString());
-                parada.Add(row["NOMBREPARADA"].ToString());
-                tiempo.Add(row["Tiempo Perdido"].ToString());
-                idArea.Add(row["parteNombre"].ToString());
-                Area.Add(row["Codigo"].ToString());
-            }
-            datos.Add(idRegistro);
-            datos.Add(codigos);
-            datos.Add(parada);
-            datos.Add(tiempo);
-            datos.Add(idArea);
-            datos.Add(Area);
-            return datos;
-        }
+        public List<List<string>> obtenerParadasActuales2turnoAntesDeLas0amAgupados(string centroCosto)
+{
+    var dataTable = new DataTable();
+    List<string> CODIGOPARADA = new List<string>();
+    List<string> CodigoParte = new List<string>();
+    List<string> NOMBREPARADA = new List<string>();
+    List<string> parteNombre = new List<string>();
+    List<string> TiempoPerdido = new List<string>();
+    List<string> codigoGrupoParada = new List<string>();
+    List<List<string>> datos = new List<List<string>>(4);
+
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            PARADAS.CODIGOPARADA,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA,
+            Area.ACodGes,
+            PARADAS.NOMBREPARADA,
+            Area.AParte,
+            SUM(
+                CASE 
+                    WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                    THEN 1440 
+                    ELSE PARADASEJECUTADAS.DEMORAPARADA * 60 
+                END
+            ) AS [Tiempo Perdido]
+        FROM SIPDATABASE2.dbo.ENTRADAEJECUCION
+        INNER JOIN SIPDATABASE2.dbo.TUPLAEJECUCION 
+            ON TUPLAEJECUCION.CODIGOTUPLA = ENTRADAEJECUCION.CODIGOTUPLA
+        INNER JOIN SIPDATABASE2.dbo.PROCESO 
+            ON PROCESO.CODIGOPROCESO = TUPLAEJECUCION.CODIGOPROCESO
+        INNER JOIN SIPDATABASE2.dbo.PARADASEJECUTADAS 
+            ON PARADASEJECUTADAS.CODIGOENTRADAEJECUCION = ENTRADAEJECUCION.CODIGOENTRADAEJECUCION
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADAS.CODIGOPARADA = PARADASEJECUTADAS.CODIGOPARADA 
+        INNER JOIN SIPDATABASE2.dbo.GRUPOSDEPARADAS 
+            ON GRUPOSDEPARADAS.CODIGOGRUPOPARADA  = PARADAS.CODIGOGRUPOPARADA
+        LEFT JOIN SIPDATABASE2.dbo.Area 
+            ON Area.ACodGes = UPPER(SUBSTRING(PARADAS.CODIGOPARADA,0,5))
+        WHERE 
+            ENTRADAEJECUCION.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '17:50:00' 
+            AND ENTRADAEJECUCION.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '06:00:00' 
+            AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' 
+            AND PROCESO.CODIGOPROCESO = " + centroCosto + @"
+        GROUP BY  
+            PARADAS.CODIGOPARADA,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA,
+            Area.ACodGes,
+            PARADAS.NOMBREPARADA,
+            Area.AParte
+        ORDER BY [Tiempo Perdido] DESC;";
+    
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        CODIGOPARADA.Add(row["CODIGOPARADA"].ToString());
+        codigoGrupoParada.Add(row["CODIGOGRUPOPARADA"].ToString());
+        CodigoParte.Add(row["ACodGes"].ToString());
+        NOMBREPARADA.Add(row["NOMBREPARADA"].ToString());
+        parteNombre.Add(row["AParte"].ToString());
+        TiempoPerdido.Add(row["Tiempo Perdido"].ToString());
+    }
+
+    datos.Add(CODIGOPARADA);
+    datos.Add(codigoGrupoParada);
+    datos.Add(CodigoParte);
+    datos.Add(NOMBREPARADA);
+    datos.Add(parteNombre);
+    datos.Add(TiempoPerdido);
+
+    return datos;
+}
+
+
+        public List<List<string>> obtenerParadasActuales2turnoDespuesDeLas0amAgrupados(string centroCosto)
+{
+    var dataTable = new DataTable();
+    List<string> CODIGOPARADA = new List<string>();
+    List<string> CodigoParte = new List<string>();
+    List<string> NOMBREPARADA = new List<string>();
+    List<string> parteNombre = new List<string>();
+    List<string> TiempoPerdido = new List<string>();
+    List<string> codigoGrupoParada = new List<string>();
+    List<List<string>> datos = new List<List<string>>(4);
+
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            PARADAS.CODIGOPARADA,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA,
+            Area.ACodGes,
+            PARADAS.NOMBREPARADA,
+            Area.AParte,
+            SUM(
+                CASE 
+                    WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                    THEN 1440 
+                    ELSE PARADASEJECUTADAS.DEMORAPARADA * 60 
+                END
+            ) AS [Tiempo Perdido]
+        FROM SIPDATABASE2.dbo.ENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.TUPLAEJECUCION 
+            ON TUPLAEJECUCION.CODIGOTUPLA = ENTRADAEJECUCION.CODIGOTUPLA
+        INNER JOIN SIPDATABASE2.dbo.PROCESO 
+            ON PROCESO.CODIGOPROCESO = TUPLAEJECUCION.CODIGOPROCESO
+        INNER JOIN SIPDATABASE2.dbo.PARADASEJECUTADAS 
+            ON PARADASEJECUTADAS.CODIGOENTRADAEJECUCION = ENTRADAEJECUCION.CODIGOENTRADAEJECUCION
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADAS.CODIGOPARADA = PARADASEJECUTADAS.CODIGOPARADA 
+        INNER JOIN SIPDATABASE2.dbo.GRUPOSDEPARADAS 
+            ON GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
+        LEFT JOIN SIPDATABASE2.dbo.Area 
+            ON Area.ACodGes = UPPER(SUBSTRING(PARADAS.CODIGOPARADA,0,5))
+        WHERE 
+            ENTRADAEJECUCION.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),-1) + '17:50:00' 
+            AND ENTRADAEJECUCION.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '06:00:00' 
+            AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' 
+            AND PROCESO.CODIGOPROCESO = " + centroCosto + @"
+        GROUP BY 
+            PARADAS.CODIGOPARADA,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA,
+            Area.ACodGes,
+            PARADAS.NOMBREPARADA,
+            Area.AParte
+        ORDER BY [Tiempo Perdido] DESC;";
+
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        CODIGOPARADA.Add(row["CODIGOPARADA"].ToString());
+        codigoGrupoParada.Add(row["CODIGOGRUPOPARADA"].ToString());
+        CodigoParte.Add(row["ACodGes"].ToString());
+        NOMBREPARADA.Add(row["NOMBREPARADA"].ToString());
+        parteNombre.Add(row["AParte"].ToString());
+        TiempoPerdido.Add(row["Tiempo Perdido"].ToString());
+    }
+
+    datos.Add(CODIGOPARADA);
+    datos.Add(codigoGrupoParada);
+    datos.Add(CodigoParte);
+    datos.Add(NOMBREPARADA);
+    datos.Add(parteNombre);
+    datos.Add(TiempoPerdido);
+
+    return datos;
+}
+
+
+public List<List<string>> obtenerParadasActuales2turnoDespuesDeLas0am(string centroCosto)
+{
+    var dataTable = new DataTable();
+    List<string> codigos = new List<string>();
+    List<string> parada = new List<string>();
+    List<string> tiempo = new List<string>();
+    List<string> idRegistro = new List<string>();
+    List<string> idArea = new List<string>();
+    List<string> Area = new List<string>();
+    List<List<string>> datos = new List<List<string>>(4);
+
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            PARADASEJECUTADAS.CODIGOREGISTRSO,
+            GRUPOSDEPARADAS.CODIGOGRUPOPARADA, 
+            PARADAS.NOMBREPARADA,
+            CASE 
+                WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                THEN 1440 
+                ELSE PARADASEJECUTADAS.DEMORAPARADA * 60 
+            END AS [Tiempo Perdido],
+            Partes.parteNombre,
+            Partes.Codigo
+        FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
+        INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL 
+            ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADASEJECUTADAS.CODIGOPARADA = PARADAS.CODIGOPARADA
+        INNER JOIN dbo.GRUPOSDEPARADAS 
+            ON dbo.GRUPOSDEPARADAS.CODIGOGRUPOPARADA = PARADAS.CODIGOGRUPOPARADA
+        INNER JOIN dbo.Partes 
+            ON dbo.Partes.Codigo = UPPER(SUBSTRING([dbo].[PARADASEJECUTADAS].[CODIGOPARADA],0,3))
+        WHERE 
+            CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),-1) + '18:00:00' 
+            AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '06:00:00' 
+            AND DATENAME(HOUR, CUADROPNFINAL.FECHAENTRADA) >= 17 
+            AND REVERSE(SUBSTRING(REVERSE([PARADAS].[CODIGOPARADA]),1,4)) <> '0114' 
+            AND CUADROPNFINAL.CODIGOPROCESO = " + centroCosto + @"
+        ORDER BY [Tiempo Perdido] DESC;";
+
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        idRegistro.Add(row["CODIGOREGISTRSO"].ToString());
+        codigos.Add(row["CODIGOGRUPOPARADA"].ToString());
+        parada.Add(row["NOMBREPARADA"].ToString());
+        tiempo.Add(row["Tiempo Perdido"].ToString());
+        idArea.Add(row["parteNombre"].ToString());
+        Area.Add(row["Codigo"].ToString());
+    }
+
+    datos.Add(idRegistro);
+    datos.Add(codigos);
+    datos.Add(parada);
+    datos.Add(tiempo);
+    datos.Add(idArea);
+    datos.Add(Area);
+
+    return datos;
+}
+
 
         public List<List<string>> obtenerParadasActuales2turno(string centroCosto){
             DateTime hoy = DateTime.Now;
