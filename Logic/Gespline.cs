@@ -82,73 +82,126 @@ namespace ConsultasSQL.Logic{
             return maquina;
         }
 
-        public Dictionary<string,float> tiempoPerdidoActual1turno(){
-            var dataTable = new DataTable();
-            Dictionary<string,float> tiempo = new Dictionary<string,float>();
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                    SELECT CUADROPNFINAL.CODIGOPROCESO, ISNULL((SUM((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 24),0) AS [Tiempo Perdido]
-                    FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
-                    INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
-                    INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
-                    WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '05:50:00' AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00'
-                    GROUP BY CUADROPNFINAL.CODIGOPROCESO
-                    ORDER BY  CUADROPNFINAL.CODIGOPROCESO;
-                ";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows)
-            {
-                tiempo.Add(row["CODIGOPROCESO"].ToString(),float.Parse(row["Tiempo Perdido"].ToString()));
-            }
-            return tiempo;
-        }
-        public Dictionary<string,float> tiempoPerdidoActual2turnoAntes0am(){
-            var dataTable = new DataTable();
-            Dictionary<string,float> tiempo = new Dictionary<string,float>();
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                    SELECT CUADROPNFINAL.CODIGOPROCESO, ISNULL((SUM((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 24),0) AS [Tiempo Perdido]
-                    FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
-                    INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
-                    INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
-                    WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '17:50:00' AND CUADROPNFINAL.FECHAENTRADA <= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '23:59:59'
-                    GROUP BY CUADROPNFINAL.CODIGOPROCESO
-                    ORDER BY  CUADROPNFINAL.CODIGOPROCESO;
-                ";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows)
-            {
-                tiempo.Add(row["CODIGOPROCESO"].ToString(),float.Parse(row["Tiempo Perdido"].ToString()));
-            }
-            return tiempo;
-        }
+        public Dictionary<string,float> tiempoPerdidoActual1turno()
+{
+    var dataTable = new DataTable();
+    Dictionary<string,float> tiempo = new Dictionary<string,float>();
 
-        public Dictionary<string,float> tiempoPerdidoActual2turnoDespues0am(){
-            var dataTable = new DataTable();
-            Dictionary<string,float> tiempo = new Dictionary<string,float>();
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
-            comandSIPDATABASE2.CommandText = @"
-                    SELECT CUADROPNFINAL.CODIGOPROCESO, ISNULL((SUM((CAST(PARADASEJECUTADAS.TIMESPAN as float) - CAST(PARADASEJECUTADAS.FECHAYHORAPARADA as float)))* 24),0) AS [Tiempo Perdido]
-                    FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
-                    INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
-                    INNER JOIN SIPDATABASE2.dbo.PARADAS ON PARADASEJECUTADAS.CODIGOPARADA  = PARADAS.CODIGOPARADA
-                    WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),-1) + '17:50:00' AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '6:00:00'
-                    GROUP BY CUADROPNFINAL.CODIGOPROCESO
-                    ORDER BY  CUADROPNFINAL.CODIGOPROCESO;
-                ";
-            DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
-            dataTable.Load(DataReaderSIPDATABASE2);
-            comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
-            foreach (DataRow row in dataTable.Rows)
-            {
-                tiempo.Add(row["CODIGOPROCESO"].ToString(),float.Parse(row["Tiempo Perdido"].ToString()));
-            }
-            return tiempo;
-        }
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            CUADROPNFINAL.CODIGOPROCESO, 
+            ISNULL(
+                SUM(
+                    CASE 
+                        WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                        THEN 1440 
+                        ELSE PARADASEJECUTADAS.DEMORAPARADA * 60 
+                    END
+                ) / 60.0, 0
+            ) AS [Tiempo Perdido]  -- ahora en horas reales
+        FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
+        INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL 
+            ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADASEJECUTADAS.CODIGOPARADA = PARADAS.CODIGOPARADA
+        WHERE 
+            CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '05:50:00' 
+            AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '18:00:00'
+        GROUP BY CUADROPNFINAL.CODIGOPROCESO
+        ORDER BY CUADROPNFINAL.CODIGOPROCESO;";
+    
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        tiempo.Add(row["CODIGOPROCESO"].ToString(), float.Parse(row["Tiempo Perdido"].ToString()));
+    }
+
+    return tiempo;
+}
+
+        public Dictionary<string,float> tiempoPerdidoActual2turnoAntes0am()
+{
+    var dataTable = new DataTable();
+    Dictionary<string,float> tiempo = new Dictionary<string,float>();
+
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            CUADROPNFINAL.CODIGOPROCESO, 
+            ISNULL(
+                SUM(
+                    CASE 
+                        WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                        THEN 1440 
+                        ELSE PARADASEJECUTADAS.DEMORAPARADA * 60 
+                    END
+                ) / 60.0, 0
+            ) AS [Tiempo Perdido] -- en horas reales
+        FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
+        INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL 
+            ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADASEJECUTADAS.CODIGOPARADA = PARADAS.CODIGOPARADA
+        WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),0) + '17:50:00' 
+          AND CUADROPNFINAL.FECHAENTRADA <= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '23:59:59'
+        GROUP BY CUADROPNFINAL.CODIGOPROCESO
+        ORDER BY CUADROPNFINAL.CODIGOPROCESO;";
+
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        tiempo.Add(row["CODIGOPROCESO"].ToString(), float.Parse(row["Tiempo Perdido"].ToString()));
+    }
+    return tiempo;
+}
+
+
+public Dictionary<string,float> tiempoPerdidoActual2turnoDespues0am()
+{
+    var dataTable = new DataTable();
+    Dictionary<string,float> tiempo = new Dictionary<string,float>();
+
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeAbrirConex();
+    comandSIPDATABASE2.CommandText = @"
+        SELECT 
+            CUADROPNFINAL.CODIGOPROCESO, 
+            ISNULL(
+                SUM(
+                    CASE 
+                        WHEN PARADASEJECUTADAS.DEMORAPARADA * 60 > 1440 
+                        THEN 1440 
+                        ELSE PARADASEJECUTADAS.DEMORAPARADA * 60 
+                    END
+                ) / 60.0, 0
+            ) AS [Tiempo Perdido] -- en horas reales
+        FROM SIPDATABASE2.dbo.PARADASEJECUTADAS 
+        INNER JOIN SIPDATABASE2.dbo.CUADROPNFINAL 
+            ON CUADROPNFINAL.CODENTRADAEJECUCION = PARADASEJECUTADAS.CODIGOENTRADAEJECUCION 
+        INNER JOIN SIPDATABASE2.dbo.PARADAS 
+            ON PARADASEJECUTADAS.CODIGOPARADA = PARADAS.CODIGOPARADA
+        WHERE CUADROPNFINAL.FECHAENTRADA >= DATEADD(dd,DATEDIFF(dd,0,GETDATE()),-1) + '17:50:00' 
+          AND CUADROPNFINAL.FECHAENTRADA < DATEADD(dd,DATEDIFF(dd,0,GETDATE()),1) + '06:00:00'
+        GROUP BY CUADROPNFINAL.CODIGOPROCESO
+        ORDER BY CUADROPNFINAL.CODIGOPROCESO;";
+
+    DataReaderSIPDATABASE2 = comandSIPDATABASE2.ExecuteReader();
+    dataTable.Load(DataReaderSIPDATABASE2);
+    comandSIPDATABASE2.Connection = conexionSIPDATABASE2.OpeCerrarConex();
+
+    foreach (DataRow row in dataTable.Rows)
+    {
+        tiempo.Add(row["CODIGOPROCESO"].ToString(), float.Parse(row["Tiempo Perdido"].ToString()));
+    }
+    return tiempo;
+}
+
         public Dictionary<string,float> tiempoEjecutadoActual1(){
             var dataTable = new DataTable();
             Dictionary<string,float> tiempo = new Dictionary<string,float>();
