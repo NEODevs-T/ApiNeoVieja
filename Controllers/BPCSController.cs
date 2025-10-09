@@ -20,7 +20,7 @@ namespace ConsultasSQL.Controllers{
         [Route("Disponibilidad")]
         public dynamic obtenerDisponibilidad(){
             obj.Connection = conexionBPCS.CodAbrirConex();
-            obj.CommandText =  "SELECT ITH.TPROD, ITH.TTYPE, ITH.TTDTE, ITH.TQTY, ITH.TWHS, ITH.TRES, ITH.THTIME, ITH.THORD, ITH.THWRKC FROM C20A237W.VENLX835F.ITH ITH WHERE (ITH.TTYPE='R') AND (ITH.TTDTE>=20220804) AND (ITH.TWHS='PT ')";
+            obj.CommandText =  "SELECT ITH.TPROD, ITH.TTYPE, ITH.TTDTE, ITH.TQTY, ITH.TWHS, ITH.TRES, ITH.THTIME, ITH.THORD, ITH.THWRKC FROM C20A237W.VENLX835F.ITH ITH WHERE (ITH.TTYPE='R') AND (ITH.TTDTE>=20220804) AND (ITH.TWHS='VVA ')";
             objResult = obj.ExecuteReader();
 
             var dataTable = new DataTable();
