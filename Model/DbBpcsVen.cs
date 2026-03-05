@@ -4,9 +4,9 @@ using Microsoft.Data.SqlClient;
 
 namespace ConsultasSQL.Model
 {
-    public class DbBpcsVen
+    public class DbBpcsGB
     {
-        private SqlConnection ConOpe = new SqlConnection("Data Source = DCTDTDB02; Initial Catalog = DbBpcsVen; TrustServerCertificate=True;Persist Security Info=True;User ID=usrLectura;Password=");
+        private SqlConnection ConOpe = new SqlConnection("Data Source = DCTDTDB02; Initial Catalog = DbBpcsGB; TrustServerCertificate=True;Persist Security Info=True;User ID=usrLectura;Password=");
         
         public SqlConnection OpeAbrirConex()
         {

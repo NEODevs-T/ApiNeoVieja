@@ -10,7 +10,7 @@ namespace ConsultasSQL.Controllers{
     [Route("Productos")]
     public class ProductosController : ControllerBase
     {
-        private BPCSVen usuarioLogic = new BPCSVen();
+        private BPCSGB usuarioLogic = new BPCSGB();
 
         [HttpGet]
         [Route("objePorHoraProductoActualEstandar/{codProducto}")]

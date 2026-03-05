@@ -18,7 +18,7 @@ namespace ConsultasSQL.Logic{
             CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
             CommandBPCS.CommandText = @"
                 SELECT EEQMST.EQID, EEQMST.EDESCR
-                FROM C20A237W.VEAM900F.EEQMST EEQMST
+                FROM X7073a51.VEAM900F.EEQMST EEQMST
                 WHERE (EEQMST.EQCO=10) AND (EEQMST.ECSTCR Like '32%') AND (EEQMST.EQID Like '85%') OR (EEQMST.EQID Like 'OF%')
             ";
             DataReaderBPCS = CommandBPCS.ExecuteReader();

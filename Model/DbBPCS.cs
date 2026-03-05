@@ -5,7 +5,7 @@ namespace ConsultasSQL.Model
 {
     public class DBconexionBPCS
     {
-        private OleDbConnection ConCodPro = new OleDbConnection("Provider=IBMDA400.DataSource.1;Data Source=APPN.VENEZUEL;Password=USRPC;User ID=USRPC");
+        private OleDbConnection ConCodPro = new OleDbConnection("Provider=IBMDA400.DataSource.1;Data Source=APPN.GRANDBAY;Password=VUSERCON01;User ID=VUSERCON01");
         // Conexion para los centros y ordenes de producción
         public OleDbConnection CodAbrirConex()
         {

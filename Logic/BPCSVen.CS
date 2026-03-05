@@ -6,24 +6,24 @@ using System.Data;
 using Newtonsoft.Json;
 
 namespace ConsultasSQL.Logic{
-    public class BPCSVen 
+    public class BPCSGB 
     {
-        private DbBpcsVen conexionBPCSVen = new DbBpcsVen();
-        private SqlCommand CommandBPCSVen = new SqlCommand();
-        private SqlDataReader? DataReaderBPCSVen;
+        private DbBpcsGB conexionBPCSGB = new DbBpcsGB();
+        private SqlCommand CommandBPCSGB = new SqlCommand();
+        private SqlDataReader? DataReaderBPCSGB;
 
         public Dictionary<string,string> ObtenerProductosActualesSegunCentroDeCosto(string centroCosto){
             Dictionary<string,string> ProductosActuales = new Dictionary<string,string>();
             DataTable dataTable = new DataTable();
-            CommandBPCSVen.Connection = conexionBPCSVen.OpeAbrirConex();
-            CommandBPCSVen.CommandText = @"
+            CommandBPCSGB.Connection = conexionBPCSGB.OpeAbrirConex();
+            CommandBPCSGB.CommandText = @"
                 SELECT TOP (1000) [Vista_Orden_Fabricacion].SPROD AS [IdProducto],Vista_Producto.IDESC AS [Descripcion]
-                FROM [DbBpcsVen].[dbo].[Vista_Orden_Fabricacion]
+                FROM [DbBpcsGB].[dbo].[Vista_Orden_Fabricacion]
                 INNER JOIN [dbo].Vista_Producto ON Vista_Producto.IPROD = [Vista_Orden_Fabricacion].SPROD
                 WHERE [ESTADO] = 'ABIERTA' AND SWRKC = " + centroCosto + @"
             ";
-            DataReaderBPCSVen = CommandBPCSVen.ExecuteReader();
-            dataTable.Load(DataReaderBPCSVen);
+            DataReaderBPCSGB = CommandBPCSGB.ExecuteReader();
+            dataTable.Load(DataReaderBPCSGB);
 
             foreach (DataRow row in dataTable.Rows)
             {
@@ -37,14 +37,14 @@ namespace ConsultasSQL.Logic{
         public string ObtenerDescripcionDelProductoPorSuCodigo(string codigoProducto){
             string descripcion = "";
             DataTable dataTable = new DataTable();
-            CommandBPCSVen.Connection = conexionBPCSVen.OpeAbrirConex();
-            CommandBPCSVen.CommandText = @"
+            CommandBPCSGB.Connection = conexionBPCSGB.OpeAbrirConex();
+            CommandBPCSGB.CommandText = @"
                 SELECT TOP (1) IDESC
                 FROM dbo.Vista_Producto
                 WHERE (IPROD='" + codigoProducto + @"')
             ";
-            DataReaderBPCSVen = CommandBPCSVen.ExecuteReader();
-            dataTable.Load(DataReaderBPCSVen);
+            DataReaderBPCSGB = CommandBPCSGB.ExecuteReader();
+            dataTable.Load(DataReaderBPCSGB);
             
             foreach (DataRow row in dataTable.Rows)
             {
