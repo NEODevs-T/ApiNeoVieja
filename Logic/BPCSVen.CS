@@ -32,6 +32,14 @@ namespace ConsultasSQL.Logic{
                 }
             }
 
+            foreach (DataRow row in dataTable.Rows)
+{
+    Console.WriteLine($"IdProducto: {row["IdProducto"]}, Descripcion: {row["Descripcion"]}");
+    if(!ProductosActuales.ContainsKey(row["IdProducto"].ToString())){
+        ProductosActuales.Add(row["IdProducto"].ToString(), row["Descripcion"].ToString());
+    }
+}
+
             return ProductosActuales;
         }
         public string ObtenerDescripcionDelProductoPorSuCodigo(string codigoProducto){

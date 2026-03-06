@@ -34,6 +34,12 @@ namespace ConsultasSQL.Controllers{
         [HttpGet]
         [Route("objePorHoraProductoActualEstandar/{periodo}")]
         public dynamic objePorHoraProductoActualEstandar(int periodo){
+            var a = bpcs.MaquinaProductosProduccionActual1turno();
+
+foreach(var maq in a)
+{
+    Console.WriteLine(maq.Key + " -> " + maq.Value.Count);
+}
             string JSONString = string.Empty;
             JSONString = JsonConvert.SerializeObject(bpcs.ObjetivoPorHoraSegunProducto(periodo));
             return JSONString;

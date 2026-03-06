@@ -6,8 +6,8 @@ namespace ConsultasSQL.Model
 {
     public class DbIngDoc
     {
-        private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBGB01; Initial Catalog =DOC_IngI; TrustServerCertificate=True;Persist Security Info=True;User ID=usrLectura;Password= ");
-        //private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBGB01; Initial Catalog = SIPDATABASE2;User ID=portaluser;Password=PORT34erySADF ");
+        private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBVEN01; Initial Catalog =DOC_IngI; TrustServerCertificate=True;Persist Security Info=True;User ID=usrDocIng;Password=usrDoc08*Sq*");
+        //private SqlConnection ConOpe = new SqlConnection("Data Source=10.20.1.60\\DBVEN01; Initial Catalog = SIPDATABASE2;User ID=portaluser;Password=PORT34erySADF ");
         // // Conexion para los centros y ordenes de producción
         public SqlConnection OpeAbrirConex()
         {
