@@ -672,33 +672,46 @@ namespace ConsultasSQL.Logic
         // --------------------------------------------------------------------
         //  Productos actuales (todo el día) - ODBC, parametrizado
         // --------------------------------------------------------------------
-        public Dictionary<string, string> obtenerLosProductosActuales()
+    public Dictionary<string, string> obtenerLosProductosActuales()
+    {
+        var productos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"), CultureInfo.InvariantCulture);
+        const string whs = "VVA";
+
+        string sql = @"
+            SELECT 
+                RTRIM(ITH.TPROD) AS TPROD,
+                RTRIM(IIM.IDESC) AS IDESC,
+                SUM(ITH.TQTY)    AS SUMQ
+            FROM GBYLX835F/ITH ITH
+            INNER JOIN GBYLX835F/IIM IIM
+                ON RTRIM(ITH.TPROD) = RTRIM(IIM.IPROD)
+            WHERE ITH.TTYPE = 'R'
+            AND ITH.TTDTE = ?
+            AND RTRIM(ITH.TWHS) = ?
+            GROUP BY RTRIM(ITH.TPROD), RTRIM(IIM.IDESC)
+            HAVING SUM(ITH.TQTY) > 0
+            ORDER BY TPROD";
+
+        using var conn = _factory.CreateOpen();
+        using var cmd  = new OdbcCommand(sql, conn);
+        cmd.CommandTimeout = 120;
+
+        cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
+        cmd.Parameters.Add("TWHS",  OdbcType.VarChar, 10).Value = whs;
+
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
         {
-            var productos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
-            string sql = @"
-                SELECT RTRIM(ITH.TPROD) TPROD, RTRIM(IIM.IDESC) IDESC, SUM(ITH.TQTY) SUMQ
-                FROM GBYLX835F/IIM IIM, GBYLX835F/ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD
-                    AND ITH.TTDTE = ?
-                    AND ITH.TTYPE = 'R'
-                    AND RTRIM(ITH.TWHS) = 'VVA'
-                GROUP BY RTRIM(ITH.TPROD), RTRIM(IIM.IDESC);";
-
-            using var conn = _factory.CreateOpen();
-            using var cmd = new OdbcCommand(sql, conn);
-            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
-            using var r = cmd.ExecuteReader();
-            while (r.Read())
-            {
-                var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
-                var desc = (r["IDESC"] as string)?.Trim() ?? string.Empty;
-                if (!productos.ContainsKey(prod))
-                    productos.Add(prod, desc);
-            }
-            return productos;
+            var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
+            var desc = (r["IDESC"] as string)?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(prod) && !productos.ContainsKey(prod))
+                productos.Add(prod, desc);
         }
+
+        return productos;
+    }
 
         // --------------------------------------------------------------------
         //  Productos actuales por línea (centro de costo) - ODBC, parametrizado
