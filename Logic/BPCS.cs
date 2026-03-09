@@ -720,29 +720,40 @@ namespace ConsultasSQL.Logic
         {
             var productos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"), CultureInfo.InvariantCulture);
+
             string sql = @"
-                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, RTRIM(IIM.IDESC) IDESC
-                FROM GBYLX835F/IIM IIM, GBYLX835F/ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD
-                    AND ITH.TTDTE = ?
-                    AND ITH.TTYPE = 'R'
-                    AND RTRIM(ITH.THWRKC) = ?
-                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD), RTRIM(IIM.IDESC);";
+                SELECT 
+                    RTRIM(ITH.TPROD) AS TPROD,
+                    RTRIM(IIM.IDESC) AS IDESC,
+                    SUM(ITH.TQTY)    AS SUMQ
+                FROM GBYLX835F/ITH ITH
+                INNER JOIN GBYLX835F/IIM IIM
+                    ON RTRIM(ITH.TPROD) = RTRIM(IIM.IPROD)
+                WHERE ITH.TTYPE = 'R'
+                AND ITH.TTDTE = ?
+                AND RTRIM(ITH.THWRKC) = ?
+                GROUP BY RTRIM(ITH.TPROD), RTRIM(IIM.IDESC)
+                HAVING SUM(ITH.TQTY) > 0
+                ORDER BY TPROD";
 
             using var conn = _factory.CreateOpen();
-            using var cmd = new OdbcCommand(sql, conn);
+            using var cmd  = new OdbcCommand(sql, conn);
+            cmd.CommandTimeout = 120;
+
             cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
-            cmd.Parameters.Add("WRKC", OdbcType.VarChar, 20).Value = centroCosto?.Trim() ?? string.Empty;
+            cmd.Parameters.Add("WRKC",  OdbcType.VarChar, 20).Value = (centroCosto ?? string.Empty).Trim();
 
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
                 var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
                 var desc = (r["IDESC"] as string)?.Trim() ?? string.Empty;
-                if (!productos.ContainsKey(prod))
+
+                if (!string.IsNullOrEmpty(prod) && !productos.ContainsKey(prod))
                     productos.Add(prod, desc);
             }
+
             return productos;
         }
     }
