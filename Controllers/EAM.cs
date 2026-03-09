@@ -1,27 +1,25 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
-using ConsultasSQL.Model;
-using System.Data.OleDb;
-using System.Data;
-using Newtonsoft.Json;
 using ConsultasSQL.Logic;
 
-
-namespace ConsultasSQL.Controllers{
-
+namespace ConsultasSQL.Controllers
+{
     [ApiController]
     [Route("EAM")]
-
     public class EAMController : ControllerBase
-    { 
-        private EAM eam = new EAM();
+    {
+        private readonly EAM _eam;
 
-        [HttpGet]
-        [Route("ObtenerEquiposEAM/{CentroCosto}")]
-        public dynamic ObtenerEquiposEAM(string CentroCosto){
-            string JSONString = string.Empty;
-            JSONString = JsonConvert.SerializeObject(eam.ObtenerEquiposEAMSegunCentroDeCosto(CentroCosto));
-            return JSONString;
+        // Inyección por constructor ✅
+        public EAMController(EAM eam)
+        {
+            _eam = eam;
+        }
+
+        [HttpGet("equipos/{centroCosto}")]
+        public IActionResult ObtenerEquiposEAMSegunCentroDeCosto(string centroCosto)
+        {
+            var data = _eam.ObtenerEquiposEAMSegunCentroDeCosto(centroCosto);
+            return Ok(data);
         }
     }
 }

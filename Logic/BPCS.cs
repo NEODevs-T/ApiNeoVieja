@@ -1,607 +1,661 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using ConsultasSQL.Model;
-using System.Data.OleDb;
+using System.Data.Odbc;
 using System.Data;
-using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 
-namespace ConsultasSQL.Logic{
-    public class BPCS 
+namespace ConsultasSQL.Logic
+{
+    public class BPCS
     {
-        private DbIngDoc conexionIngDoc = new DbIngDoc();
-        private SqlCommand CommandIngDoc = new SqlCommand();
-        private SqlDataReader? DataReaderIngDoc;
+        // --------- Dependencias ---------
+        private readonly IBpcsConnectionFactory _factory;
+        private readonly DbIngDoc conexionIngDoc = new DbIngDoc(); // (SQL Server)
+        private readonly Gespline gespline = new Gespline();
 
-        private DBconexionBPCS conexionBPCS = new DBconexionBPCS();
-        private OleDbCommand CommandBPCS = new OleDbCommand();
-        OleDbDataReader? DataReaderBPCS;
-        private DbSIPDATABASE2 conexionSIPDATABASE2 = new DbSIPDATABASE2();
-        private SqlCommand comandSIPDATABASE2 = new SqlCommand();
-        private Gespline gespline = new Gespline();
-        SqlDataReader? DataReaderSIPDATABASE2;
+        public BPCS(IBpcsConnectionFactory factory)
+        {
+            _factory = factory;
+        }
 
-        public Dictionary<string,Dictionary<string,int>> ObjetivoPorHoraSegunProducto(int tiempo){
-            Dictionary<string,Dictionary<string,int>> produccion;
-            if(tiempo == 1){
+        // --------------------------------------------------------------------
+        //  OBJETIVO POR HORA SEGÚN PRODUCTO (usa SQL Server) - PARAMETRIZADO
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, int>> ObjetivoPorHoraSegunProducto(int tiempo)
+        {
+            Dictionary<string, Dictionary<string, int>> produccion;
+            if (tiempo == 1)
+            {
                 produccion = MaquinaProductosProduccionActual1turno();
-            }else if(tiempo == 2){
+            }
+            else if (tiempo == 2)
+            {
                 produccion = MaquinaProductosProduccionActual2turnoAntes0am();
-            }else if(tiempo == 3){
+            }
+            else if (tiempo == 3)
+            {
                 produccion = MaquinaProductosProduccionActual2turnoDespues0am();
-            }else{
-                return null;
             }
-            
-            string maquina;
-            string producto;
-            Dictionary<string,int> produccionMaquina;
-
-            foreach (var item in produccion)
+            else
             {
-                maquina = item.Key;
-                produccionMaquina = item.Value;
-                foreach (var productosProduccion in produccionMaquina)
+                return null!;
+            }
+
+            foreach (var kvpMaq in produccion.ToList())
+            {
+                var maquina = kvpMaq.Key;
+                var produccionMaquina = kvpMaq.Value;
+
+                foreach (var prodKey in produccionMaquina.Keys.ToList())
                 {
-                    producto = productosProduccion.Key;
+                    // SQL Server parametrizado
+                    using var sqlConn = conexionIngDoc.OpeAbrirConex();
+                    using var cmd = new SqlCommand(@"
+                        SELECT TOP (1) dbo.ObPrConver.OcObjEfic AS [ObjEstandar]
+                        FROM [DOC_IngI].[dbo].[ObPrConver]
+                        INNER JOIN [BD_SeguimientoPlanta].[BPCS].[IIM] 
+                            ON [DOC_IngI].[dbo].[ObPrConver].OcCprod = [BD_SeguimientoPlanta].[BPCS].[IIM].IPROD
+                        WHERE dbo.ObPrConver.OcCentro = @maquina
+                          AND dbo.ObPrConver.OcCprod  = @producto
+                        ORDER BY OcFecha DESC", sqlConn);
 
-                    CommandIngDoc.Connection = conexionIngDoc.OpeAbrirConex();
-                    CommandIngDoc.CommandText = @"
-                            SELECT dbo.ObPrConver.OcObjEfic  AS [ObjEstandar] 
-                            FROM [DOC_IngI].[dbo].[ObPrConver] INNER JOIN [BD_SeguimientoPlanta].[BPCS].[IIM] ON [DOC_IngI].[dbo].[ObPrConver].OcCprod = [BD_SeguimientoPlanta].[BPCS].[IIM].IPROD 
-                            where dbo.ObPrConver.OcCentro = '"+ maquina +"' AND dbo.ObPrConver.OcCprod = '"+ producto +"' ORDER BY OcFecha desc";
-                    DataReaderIngDoc = CommandIngDoc.ExecuteReader();
+                    cmd.Parameters.Add(new SqlParameter("@maquina", System.Data.SqlDbType.VarChar, 20) { Value = maquina });
+                    cmd.Parameters.Add(new SqlParameter("@producto", System.Data.SqlDbType.VarChar, 50) { Value = prodKey });
 
-                    if(DataReaderIngDoc.Read()){
-                        produccion[maquina][producto] = int.Parse(DataReaderIngDoc.GetValue(0).ToString());
-                    }else{
-                        produccion[maquina][producto] = -1; 
-                    }
-                    CommandIngDoc.Connection = conexionIngDoc.OpeCerrarConex();
+                    var obj = cmd.ExecuteScalar();
+                    conexionIngDoc.OpeCerrarConex();
+
+                    if (obj != null && obj != DBNull.Value && int.TryParse(obj.ToString(), out var objetivo))
+                        produccion[maquina][prodKey] = objetivo;
+                    else
+                        produccion[maquina][prodKey] = -1;
                 }
             }
 
             return produccion;
         }
 
-        public Dictionary<string,Dictionary<string,int>> MaquinaProductosProduccionActual1turno(){
-            var dataTable = new DataTable();
-            Dictionary<string,Dictionary<string,int>> producción = new Dictionary<string,Dictionary<string,int>>();
-            List<string> maquinas = gespline.MaquinasGesplineActivos1turno();
-            Dictionary<string,int> temporal;
+        // --------------------------------------------------------------------
+        //  1er TURNO: 06:00:00–17:59:59
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, int>> MaquinaProductosProduccionActual1turno()
+        {
+            var maquinasActivas = gespline.MaquinasGesplineActivos1turno() ?? new List<string>();
+            var maquinasSet = new HashSet<string>(maquinasActivas.Select(m => (m ?? string.Empty).Trim()),
+                                                  StringComparer.OrdinalIgnoreCase);
 
-            foreach(string maquina in maquinas){
-                temporal = new Dictionary<string,int>();
-                producción.Add(maquina,temporal);
-            }
+            var produccion = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
 
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION 
-                        FROM X7073a51.GBYLX835F.ITH ITH 
-                        WHERE (ITH.TTYPE='R') AND (ITH.TTDTE ="+ DateTime.Now.ToString("yyyyMMdd") +@") AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=60000 And ITH.THTIME<180000) 
-                        GROUP BY ITH.THWRKC, ITH.TPROD 
-                        ORDER BY ITH.THWRKC";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
+            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+            string whs = "VVA";       // comparar con RTRIM(TWHS)
+            int timeStart = 60000;    // 06:00:00
+            int timeEnd = 180000;     // 18:00:00 (exclusivo)
 
-            foreach (DataRow row in dataTable.Rows)
+string sql = @"
+    SELECT 
+        RTRIM(ITH.THWRKC) AS THWRKC,
+        RTRIM(ITH.TPROD)  AS TPROD,
+        SUM(ITH.TQTY)     AS PRODUCCION
+    FROM GBYLX835F/ITH ITH
+    WHERE ITH.TTYPE = 'R'
+      AND ITH.TTDTE = ?
+      AND RTRIM(ITH.TWHS) = ?
+      AND ITH.THTIME >= ? AND ITH.THTIME < ?
+    GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
+    ORDER BY RTRIM(ITH.THWRKC)
+";
+
+            using var conn = _factory.CreateOpen();
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.CommandTimeout = 120;
+
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
+            cmd.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
+            cmd.Parameters.Add("TINI", OdbcType.Int).Value = timeStart;
+            cmd.Parameters.Add("TFIN", OdbcType.Int).Value = timeEnd;
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
             {
-                if (producción.ContainsKey(row["THWRKC"].ToString()))
+                var wrkc = (reader["THWRKC"] as string)?.Trim() ?? string.Empty;
+                var prod = (reader["TPROD"] as string)?.Trim() ?? string.Empty;
+                int qty = 0;
+
+                if (reader["PRODUCCION"] != DBNull.Value)
                 {
-                    temporal = producción[row["THWRKC"].ToString()];
-                    //var a = row["TPROD"].ToString();
-                    temporal.Add(row["TPROD"].ToString(), (int) float.Parse(row["PRODUCCION"].ToString()));
-                    producción[row["THWRKC"].ToString()] = temporal;
-                }else{
-                    continue;
+                    var dec = Convert.ToDecimal(reader["PRODUCCION"], CultureInfo.InvariantCulture);
+                    qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
                 }
-            }
-            return producción;
-        }
 
-        public Dictionary<string,Dictionary<string,int>> MaquinaProductosProduccionActual2turnoDespues0am(){
-            var dataTable = new DataTable();
-            Dictionary<string,Dictionary<string,int>> producción = new Dictionary<string,Dictionary<string,int>>();
-            List<string> maquinas = gespline.MaquinasGesplineActivos2turnoDespues0am();
-            Dictionary<string,int> temporal;
+                if (!maquinasSet.Contains(wrkc)) continue;
 
-            foreach(string maquina in maquinas){
-                temporal = new Dictionary<string,int>();
-                producción.Add(maquina,temporal);
+                if (!produccion.TryGetValue(wrkc, out var dict))
+                    produccion[wrkc] = dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                dict[prod] = qty;
             }
 
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION
-                        FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=0 And ITH.THTIME<60000))
-                        GROUP BY ITH.THWRKC, ITH.TPROD
-                        ORDER BY ITH.THWRKC
-                        ";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
+            foreach (var m in maquinasSet)
+                if (!produccion.ContainsKey(m))
+                    produccion[m] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (DataRow row in dataTable.Rows)
-            {
-                if (producción.ContainsKey(row["THWRKC"].ToString()))
-                {
-                    temporal = producción[row["THWRKC"].ToString()];
-                    temporal.Add(row["TPROD"].ToString(),(int) float.Parse(row["PRODUCCION"].ToString()));
-                    producción[row["THWRKC"].ToString()] = temporal;
-                }else{
-                    continue;
-                }
-            }
-
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            dataTable = new DataTable();
-
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION
-                        FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.ToString("yyyyMMdd") +@"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME< 235959))
-                        GROUP BY ITH.THWRKC, ITH.TPROD
-                        ";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-            
-            int temporalNumero;
-
-            foreach (DataRow row in dataTable.Rows)
-            {
-                if (producción.ContainsKey(row["THWRKC"].ToString()))
-                {
-                    temporal = producción[row["THWRKC"].ToString()];
-
-                    if(temporal.ContainsKey(row["TPROD"].ToString())){
-
-                        temporalNumero = temporal[row["TPROD"].ToString()];
-
-                        temporalNumero += (int) float.Parse(row["PRODUCCION"].ToString());
-
-                        temporal[row["TPROD"].ToString()] = temporalNumero;
-
-                    }else{
-                        temporal.Add(row["TPROD"].ToString(),(int) float.Parse(row["PRODUCCION"].ToString()));
-                    }
-                    producción[row["THWRKC"].ToString()] = temporal;
-                }else{
-                    continue;
-                }
-            }
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            return producción;
-        }
-
-        public Dictionary<string,Dictionary<string,int>> MaquinaProductosProduccionActual2turnoAntes0am(){
-            var dataTable = new DataTable();
-            Dictionary<string,Dictionary<string,int>> producción = new Dictionary<string,Dictionary<string,int>>();
-            List<string> maquinas = gespline.MaquinasGesplineActivos2turnoAntes0am();
-            Dictionary<string,int> temporal;
-
-            foreach(string maquina in maquinas){
-                temporal = new Dictionary<string,int>();
-                producción.Add(maquina,temporal);
-            }
-
-
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, Sum(ITH.TQTY) AS PRODUCCION
-                        FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE ='"+ DateTime.Now.AddDays(+1).ToString("yyyyMMdd") +@"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME<=235959))
-                        GROUP BY ITH.THWRKC, ITH.TPROD
-                        ";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-            
-            int temporalNumero;
-
-            foreach (DataRow row in dataTable.Rows)
-            {
-                if (producción.ContainsKey(row["THWRKC"].ToString()))
-                {
-                    temporal = producción[row["THWRKC"].ToString()];
-
-                    if(temporal.ContainsKey(row["TPROD"].ToString())){
-
-                        temporalNumero = temporal[row["TPROD"].ToString()];
-
-                        temporalNumero += (int) float.Parse(row["PRODUCCION"].ToString());
-
-                        temporal[row["TPROD"].ToString()] = temporalNumero;
-
-                    }else{
-                        temporal.Add(row["TPROD"].ToString(),(int) float.Parse(row["PRODUCCION"].ToString()));
-                    }
-                    producción[row["THWRKC"].ToString()] = temporal;
-                }else{
-                    continue;
-                }
-            }
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            return producción;
-        }
-
-        public Dictionary<string,Dictionary<string,int>> conversionTotalAEstandarPormaquinaYproducto(Dictionary<string,Dictionary<string,int>> produccion){
-            Dictionary<string,int> productos;
-            List<string> productosLlaves;
-            int produccionActual;
-            List<string> maquinasllaves = new List<string>(produccion.Keys);
-            for (int i = 0; i < produccion.Count(); i++)
-            {
-                productos = produccion[maquinasllaves[i]];
-                productosLlaves = new List<string>(productos.Keys);
-                for (int j = 0; j < productosLlaves.Count(); j++)
-                {   
-                    produccionActual = productos[productosLlaves[j]];
-
-                    CommandIngDoc.Connection = conexionIngDoc.OpeAbrirConex();
-                    CommandIngDoc.CommandText = @"
-                            SELECT  IIM.IMFLPF
-                            FROM  [BD_SeguimientoPlanta].[BPCS].[IIM]                        
-                            Where IPROD  = '" + productosLlaves[j] + "';";
-                    DataReaderIngDoc = CommandIngDoc.ExecuteReader();
-
-                    if(DataReaderIngDoc.Read()){
-                        produccionActual = (int) Math.Round(produccionActual * float.Parse(DataReaderIngDoc.GetValue(0).ToString()));
-                        //diccionario.Add(DataReaderIngDoc.GetValue(0).ToString(),DataReaderIngDoc.GetDecimal(3) * Decimal.Parse(DataReaderBPCS.GetValue(3).ToString()));
-                    }else{
-                        produccionActual = -1;
-                    }
-                    CommandIngDoc.Connection = conexionIngDoc.OpeCerrarConex();
-                    productos[productosLlaves[j]] = produccionActual;
-
-                }
-                produccion[maquinasllaves[i]] = productos;
-            }
             return produccion;
         }
 
-        //TODO: hacer funcion de convertir produccion por hora a estandar
-        public Dictionary<string,Dictionary<string,List<int>>> conversionTotalAEstandarPormaquinaYproducto(Dictionary<string,Dictionary<string,List<int>>> produccion){
-            Dictionary<string,List<int>> productoHoras;
-            Dictionary<string,List<int>> total = new Dictionary<string,List<int>>();
-            List<string> productosLlaves;
-            List<int> listaProduccionActual;
-            int produccionHora;
-            total.Add("Total",new List<int>() {0,0,0,0,0,0,0,0,0,0,0,0,0});
-            List<string> maquinasllaves = new List<string>(produccion.Keys);
-            for (int i = 0; i < produccion.Count(); i++)
+        // --------------------------------------------------------------------
+        //  2do TURNO (después de 0 am): combinas 00:00–05:59 del día actual + 18:00–23:59 del día actual
+        //  (Mantenemos la misma lógica que tenías: dos consultas y sumas)
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, int>> MaquinaProductosProduccionActual2turnoDespues0am()
+        {
+            var produccion = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+            var maquinas = gespline.MaquinasGesplineActivos2turnoDespues0am() ?? new List<string>();
+            foreach (var m in maquinas) produccion[(m ?? string.Empty).Trim()] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+            string whs = "VVA";
+
+            using var conn = _factory.CreateOpen();
+
+            // A) 00:00:00–05:59:59 del día actual
+            string sqlA = @"
+                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE='R'
+                  AND ITH.TTDTE = ?
+                  AND RTRIM(ITH.TWHS) = ?
+                  AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
+                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
+                ORDER BY RTRIM(ITH.THWRKC)";
+            using (var cmdA = new OdbcCommand(sqlA, conn))
             {
-                productoHoras = produccion[maquinasllaves[i]];
-                productosLlaves = new List<string>(productoHoras.Keys);
-                for (int j = 0; j < productosLlaves.Count(); j++)
-                {   
-                    listaProduccionActual = productoHoras[productosLlaves[j]];
-
-                    CommandIngDoc.Connection = conexionIngDoc.OpeAbrirConex();
-                    CommandIngDoc.CommandText = @"
-                            SELECT  IIM.IMFLPF
-                            FROM  [BD_SeguimientoPlanta].[BPCS].[IIM]                        
-                            Where IPROD  = '" + productosLlaves[j] + "';";
-                    DataReaderIngDoc = CommandIngDoc.ExecuteReader();
-
-                    if(DataReaderIngDoc.Read()){
-                        for (int k = 0; k < listaProduccionActual.Count(); k++)
-                        {
-                            produccionHora = listaProduccionActual[k];
-                            produccionHora = (int) Math.Round(produccionHora * float.Parse(DataReaderIngDoc.GetValue(0).ToString()));
-                            listaProduccionActual[k] = produccionHora;
-                            total["Total"][k] = total["Total"][k] + produccionHora;
-                        }
-                        //diccionario.Add(DataReaderIngDoc.GetValue(0).ToString(),DataReaderIngDoc.GetDecimal(3) * Decimal.Parse(DataReaderBPCS.GetValue(3).ToString()));
-                    }else{
-                        for (int k = 0; k < listaProduccionActual.Count(); k++)
-                        {
-                            produccionHora = listaProduccionActual[k];
-                            produccionHora = -1;
-                            listaProduccionActual[k] = produccionHora;
-                        }
-                    }
-                    CommandIngDoc.Connection = conexionIngDoc.OpeCerrarConex();
-                    productoHoras[productosLlaves[j]] = listaProduccionActual;
-
-                }
-                produccion[maquinasllaves[i]] = productoHoras;
-            }
-            produccion.Add("Total",total);
-            return produccion;
-        }
-
-        public Dictionary<string, int> ProduccionActualPorMaquinaPorHora(Dictionary<string,Dictionary<string,int>> produccion,int Periodotiempo){
-            //Dictionary<string, Dictionary<string, int>> produccion = MaquinaProductosProduccionActual1turno();
-            int suma = 0;
-            float resul = 0;
-            Dictionary<string,int> ProduccionPorHora = new Dictionary<string,int>();
-            List<string> maquinasllaves = new List<string>(produccion.Keys);
-            Dictionary<string, int> cantidadSegunProductos;
-            Dictionary<string, float> tiempo;
-
-            if(Periodotiempo == 1){
-                tiempo = gespline.tiempoTrabajadoActual1turno();
-            }else if(Periodotiempo == 2){
-                tiempo = gespline.tiempoTrabajadoActual2turno(true);
-            }else if(Periodotiempo == 3){
-                tiempo = gespline.tiempoTrabajadoActual2turno(false);
-            }else{
-                return null;
-            }
-
-            for (int i = 0; i < maquinasllaves.Count(); i++)
-            {
-                cantidadSegunProductos = produccion[maquinasllaves[i]];
-                foreach (var item in cantidadSegunProductos)
+                cmdA.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
+                cmdA.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
+                using var rA = cmdA.ExecuteReader();
+                while (rA.Read())
                 {
-                    suma += item.Value;
+                    var wrkc = (rA["THWRKC"] as string)?.Trim() ?? string.Empty;
+                    var prod = (rA["TPROD"] as string)?.Trim() ?? string.Empty;
+                    var dec = Convert.ToDecimal(rA["PRODUCCION"], CultureInfo.InvariantCulture);
+                    var qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
+
+                    if (!produccion.TryGetValue(wrkc, out var dict))
+                        continue; // restringimos a máquinas activas declaradas
+                    dict[prod] = qty;
                 }
-                try{
-                    ProduccionPorHora.Add(maquinasllaves[i],(int) Math.Round(suma/tiempo[maquinasllaves[i]]));
-                }catch{
-
-                }
-                suma = 0;
             }
-            return ProduccionPorHora;
-        }
 
-        public Dictionary<string, Dictionary<string,List<int>>> obtenerLaProduccionActual1turno(){
-            List<string> maquinas = gespline.MaquinasGesplineActivos1turno();
-            Dictionary<string, Dictionary<string,List<int>>> producionMaquinaPorHora = new Dictionary<string,Dictionary<string,List<int>>>(); 
-            Dictionary<string,List<int>> listaProSuma;
-            List<int> listaSuma;
-            var dataTable = new DataTable();
-
-            foreach (var item in maquinas)
+            // B) 18:00:00–23:59:59 del día actual
+            string sqlB = @"
+                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE='R'
+                  AND ITH.TTDTE = ?
+                  AND RTRIM(ITH.TWHS) = ?
+                  AND ITH.THTIME >= 180000 AND ITH.THTIME < 235959
+                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
+                ORDER BY RTRIM(ITH.THWRKC)";
+            using (var cmdB = new OdbcCommand(sqlB, conn))
             {
-                listaProSuma = new Dictionary<string,List<int>>();
-                producionMaquinaPorHora.Add(item,listaProSuma);
-            }
-
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
-                        FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE =" + DateTime.Now.ToString("yyyyMMdd") + @") AND (ITH.TWHS='VVA ') AND (ITH.THTIME >=60000 And ITH.THTIME<=180000))
-                        ORDER BY ITH.THWRKC";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-
-            string maquina;
-            string producto;
-            int hora;
-            foreach (DataRow row in dataTable.Rows)
-            {
-                maquina = row["THWRKC"].ToString();
-                if(!producionMaquinaPorHora.ContainsKey(maquina)){
-                    listaProSuma = new Dictionary<string,List<int>>();
-                    producionMaquinaPorHora.Add(maquina,listaProSuma);
-                }
-                    listaProSuma = producionMaquinaPorHora[maquina];
-                    producto = row["TPROD"].ToString();
-                    if(listaProSuma.ContainsKey(producto)){
-                        listaSuma = listaProSuma[producto];
-                    }else{
-                        listaSuma = new List<int>() {0,0,0,0,0,0,0,0,0,0,0,0,0};
-                        listaProSuma.Add(producto,listaSuma);
-                    }
-
-                    hora = int.Parse(row["THTIME"].ToString());
-                    if (hora >= 60000 && hora < 70000){
-                        listaSuma[0] = listaSuma[0] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 80000){
-                        listaSuma[1] = listaSuma[1] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 90000){
-                        listaSuma[2] = listaSuma[2] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 100000){
-                        listaSuma[3] = listaSuma[3] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 110000){
-                        listaSuma[4] = listaSuma[4] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 120000){
-                        listaSuma[5] = listaSuma[5] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 130000){
-                        listaSuma[6] = listaSuma[6] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 140000){
-                        listaSuma[7] = listaSuma[7] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 150000){
-                        listaSuma[8] = listaSuma[8] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 160000){
-                        listaSuma[9] = listaSuma[9] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 170000){
-                        listaSuma[10] = listaSuma[10] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora <= 180000){
-                        listaSuma[11] = listaSuma[11] + int.Parse(row["TQTY"].ToString());
-                    }
-                    listaSuma[12] = listaSuma[12] + int.Parse(row["TQTY"].ToString());
-            }
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            return producionMaquinaPorHora;
-        }
-
-        private DataTable obtenerLaProduccionActual2turnoAntes0am(bool band){
-            Dictionary<string, Dictionary<string,List<int>>> producionMaquinaPorHora = new Dictionary<string,Dictionary<string,List<int>>>();
-            var dataTable = new DataTable();
-            //* si band es true estamos a las 6pm a 11:59 am
-            if(band){
-                CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-                CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
-                        FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.AddDays(+1).ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME < 240000))
-                        ORDER BY ITH.THWRKC";
-                DataReaderBPCS = CommandBPCS.ExecuteReader();
-            //* si band es falso estamos de 11:59 am hasta 6 am
-            }else{
-                CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-                CommandBPCS.CommandText = @"
-                        SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
-                        FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                        WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME>=180000 And ITH.THTIME < 240000))
-                        ORDER BY ITH.THWRKC";
-                DataReaderBPCS = CommandBPCS.ExecuteReader();
-            }
-            dataTable.Load(DataReaderBPCS); 
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            return dataTable;
-        }
-
-        public Dictionary<string, string> obtenerLosProductosActuales(){
-            var dataTable = new DataTable();
-            Dictionary<string, string> productos = new Dictionary<string, string>();
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                SELECT ITH.TPROD, IIM.IDESC, Sum(ITH.TQTY)
-                FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTDTE="+ DateTime.Now.ToString("yyyyMMdd") + @") AND (ITH.TTYPE='R') AND (ITH.TWHS='VVA'))
-                GROUP BY ITH.TPROD, IIM.IDESC";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-            foreach (DataRow row in dataTable.Rows)
-            {
-                productos.Add(row["TPROD"].ToString(),row["IDESC"].ToString());
-            }
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            
-            return productos;
-        }
-
-        public Dictionary<string, string> obtenerLosProductosActualesDeLinea(string centroCosto){
-            var dataTable = new DataTable();
-            Dictionary<string, string> productos = new Dictionary<string, string>();
-
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC
-                FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTDTE='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TTYPE='R') AND (ITH.THWRKC='"+ centroCosto + @"'))
-                GROUP BY ITH.THWRKC, ITH.TPROD, IIM.IDESC";
-                // AND (ITH.TWHS='VVA') 
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-            foreach (DataRow row in dataTable.Rows)
-            {
-                productos.Add(row["TPROD"].ToString(),row["IDESC"].ToString());
-            }
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-
-            return productos;
-        }
-
-        private DataTable obtenerLaProduccionActual2turnoDespues0am(){
-            Dictionary<string, Dictionary<string,List<int>>> producionMaquinaPorHora = new Dictionary<string,Dictionary<string,List<int>>>();
-            var dataTable = new DataTable();
-
-            CommandBPCS.Connection = conexionBPCS.CodAbrirConex();
-            CommandBPCS.CommandText = @"
-                SELECT ITH.THWRKC, ITH.TPROD, IIM.IDESC, ITH.TQTY, ITH.THTIME
-                FROM X7073a51.GBYLX835F.IIM IIM, X7073a51.GBYLX835F.ITH ITH
-                WHERE ITH.TPROD = IIM.IPROD AND ((ITH.TTYPE='R') AND (ITH.TTDTE>='"+ DateTime.Now.ToString("yyyyMMdd") + @"') AND (ITH.TWHS='VVA ') AND (ITH.THTIME >= 0 And ITH.THTIME < 60000))
-                ORDER BY ITH.THWRKC";
-            DataReaderBPCS = CommandBPCS.ExecuteReader();
-            dataTable.Load(DataReaderBPCS);
-            CommandBPCS.Connection = conexionBPCS.CodCerrarConex();
-            return dataTable;
-        }
-        public Dictionary<string, Dictionary<string,List<int>>> obtenerLaProduccionActual2turno(bool band){
-            Dictionary<string, Dictionary<string,List<int>>> producionMaquinaPorHora = new Dictionary<string,Dictionary<string,List<int>>>(); 
-            Dictionary<string,List<int>> listaProSuma;
-            List<int> listaSuma;
-            var dataTable = new DataTable();
-            var dataTable2 = new DataTable();
-
-            List<string> maquinas = new List<string>();
-            //* si band es true estamos a las 6pm a 11:59 am
-            if(band){
-                maquinas = gespline.MaquinasGesplineActivos2turnoAntes0am();
-                dataTable = this.obtenerLaProduccionActual2turnoAntes0am(band);
-            //* si band es true estamos a las 11:59 pm a 6 am
-            }else{
-                maquinas = gespline.MaquinasGesplineActivos2turnoDespues0am();
-                dataTable = this.obtenerLaProduccionActual2turnoAntes0am(band);
-                dataTable2 = this.obtenerLaProduccionActual2turnoDespues0am();
-            }
-
-            foreach (var item in maquinas)
-            {
-                listaProSuma = new Dictionary<string,List<int>>();
-                producionMaquinaPorHora.Add(item,listaProSuma);
-            }
-
-
-            string maquina;
-            string producto;
-            int hora;
-            foreach (DataRow row in dataTable.Rows)
-            {
-                maquina = row["THWRKC"].ToString();
-                if(!producionMaquinaPorHora.ContainsKey(maquina)){
-                    listaProSuma = new Dictionary<string,List<int>>();
-                    producionMaquinaPorHora.Add(maquina,listaProSuma);
-                }
-                    listaProSuma = producionMaquinaPorHora[maquina];
-                    producto = row["TPROD"].ToString();
-                    if(listaProSuma.ContainsKey(producto)){
-                        listaSuma = listaProSuma[producto];
-                    }else{
-                        listaSuma = new List<int>() {0,0,0,0,0,0,0,0,0,0,0,0,0};
-                        listaProSuma.Add(producto,listaSuma);
-                    }
-
-                    hora = int.Parse(row["THTIME"].ToString());
-                    if (hora >= 180000 && hora < 190000){
-                        listaSuma[0] = listaSuma[0] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 200000){
-                        listaSuma[1] = listaSuma[1] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 210000){
-                        listaSuma[2] = listaSuma[2] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 220000){
-                        listaSuma[3] = listaSuma[3] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 230000){
-                        listaSuma[4] = listaSuma[4] + int.Parse(row["TQTY"].ToString());
-                    }else if(hora < 240000){
-                        listaSuma[5] = listaSuma[5] + int.Parse(row["TQTY"].ToString());
-                    }
-                    listaSuma[12] = listaSuma[12] + int.Parse(row["TQTY"].ToString());
-                
-            }
-            if(!band){
-                foreach (DataRow row in dataTable2.Rows)
+                cmdB.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
+                cmdB.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
+                using var rB = cmdB.ExecuteReader();
+                while (rB.Read())
                 {
-                    maquina = row["THWRKC"].ToString();
-                    if(producionMaquinaPorHora.ContainsKey(maquina)){
-                        listaProSuma = producionMaquinaPorHora[maquina];
-                        producto = row["TPROD"].ToString();
-                        if(listaProSuma.ContainsKey(producto)){
-                            listaSuma = listaProSuma[producto];
-                        }else{
-                            listaSuma = new List<int>() {0,0,0,0,0,0,0,0,0,0,0,0,0};
-                            listaProSuma.Add(producto,listaSuma);
-                        }
+                    var wrkc = (rB["THWRKC"] as string)?.Trim() ?? string.Empty;
+                    var prod = (rB["TPROD"] as string)?.Trim() ?? string.Empty;
+                    var dec = Convert.ToDecimal(rB["PRODUCCION"], CultureInfo.InvariantCulture);
+                    var qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
 
-                        hora = int.Parse(row["THTIME"].ToString());
-                        if(hora > 0 && hora < 10000){
-                            listaSuma[6] = listaSuma[6] + int.Parse(row["TQTY"].ToString());
-                        }else if(hora < 20000){
-                            listaSuma[7] = listaSuma[7] + int.Parse(row["TQTY"].ToString());
-                        }else if(hora < 30000){
-                            listaSuma[8] = listaSuma[8] + int.Parse(row["TQTY"].ToString());
-                        }else if(hora < 40000){
-                            listaSuma[9] = listaSuma[9] + int.Parse(row["TQTY"].ToString());
-                        }else if(hora < 50000){
-                            listaSuma[10] = listaSuma[10] + int.Parse(row["TQTY"].ToString());
-                        }else if(hora <= 60000){
-                            listaSuma[11] = listaSuma[11] + int.Parse(row["TQTY"].ToString());
-                        }
-                        listaSuma[12] = listaSuma[12] + int.Parse(row["TQTY"].ToString());
-                    }else{
+                    if (!produccion.TryGetValue(wrkc, out var dict))
                         continue;
-                    }
+
+                    dict[prod] = dict.ContainsKey(prod) ? dict[prod] + qty : qty;
                 }
             }
-            return producionMaquinaPorHora;
+
+            return produccion;
         }
-        
+
+        // --------------------------------------------------------------------
+        //  2do TURNO (antes de 0 am): 18:00–23:59 pero usando la FECHA +1 (como en tu lógica original)
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, int>> MaquinaProductosProduccionActual2turnoAntes0am()
+        {
+            var produccion = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+            var maquinas = gespline.MaquinasGesplineActivos2turnoAntes0am() ?? new List<string>();
+            foreach (var m in maquinas) produccion[(m ?? string.Empty).Trim()] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            int fechaManiana = int.Parse(DateTime.Today.AddDays(+1).ToString("yyyyMMdd"));
+            string whs = "VVA";
+
+            string sql = @"
+                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE='R'
+                  AND ITH.TTDTE = ?
+                  AND RTRIM(ITH.TWHS) = ?
+                  AND ITH.THTIME >= 180000 AND ITH.THTIME <= 235959
+                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
+                ORDER BY RTRIM(ITH.THWRKC)";
+
+            using var conn = _factory.CreateOpen();
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaManiana;
+            cmd.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var wrkc = (r["THWRKC"] as string)?.Trim() ?? string.Empty;
+                var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
+                var dec = Convert.ToDecimal(r["PRODUCCION"], CultureInfo.InvariantCulture);
+                var qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
+
+                if (!produccion.TryGetValue(wrkc, out var dict))
+                    continue;
+
+                dict[prod] = dict.ContainsKey(prod) ? dict[prod] + qty : qty;
+            }
+            return produccion;
+        }
+
+        // --------------------------------------------------------------------
+        //  CONVERSIÓN A ESTÁNDAR (usa SQL Server para factor IIM.IMFLPF) - PARAMETRIZADO
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, int>> conversionTotalAEstandarPormaquinaYproducto(
+            Dictionary<string, Dictionary<string, int>> produccion)
+        {
+            var maquinas = produccion.Keys.ToList();
+
+            foreach (var maq in maquinas)
+            {
+                var productos = produccion[maq];
+                var keysProd = productos.Keys.ToList();
+
+                foreach (var prod in keysProd)
+                {
+                    var actual = productos[prod];
+
+                    using var sqlConn = conexionIngDoc.OpeAbrirConex();
+                    using var cmd = new SqlCommand(@"
+                        SELECT IIM.IMFLPF
+                        FROM [BD_SeguimientoPlanta].[BPCS].[IIM]
+                        WHERE IPROD = @prod;", sqlConn);
+                    cmd.Parameters.Add(new SqlParameter("@prod", System.Data.SqlDbType.VarChar, 50) { Value = prod });
+
+                    var obj = cmd.ExecuteScalar();
+                    conexionIngDoc.OpeCerrarConex();
+
+                    if (obj != null && float.TryParse(obj.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor))
+                        productos[prod] = (int)Math.Round(actual * factor);
+                    else
+                        productos[prod] = -1;
+                }
+                produccion[maq] = productos;
+            }
+            return produccion;
+        }
+
+        // --------------------------------------------------------------------
+        //  CONVERSIÓN A ESTÁNDAR versión List<int> por horas (SQL Server) - PARAMETRIZADO
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, List<int>>> conversionTotalAEstandarPormaquinaYproducto(
+            Dictionary<string, Dictionary<string, List<int>>> produccion)
+        {
+            var total = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Total"] = Enumerable.Repeat(0, 13).ToList()
+            };
+
+            foreach (var maq in produccion.Keys.ToList())
+            {
+                var productoHoras = produccion[maq];
+
+                foreach (var prod in productoHoras.Keys.ToList())
+                {
+                    var lista = productoHoras[prod];
+
+                    using var sqlConn = conexionIngDoc.OpeAbrirConex();
+                    using var cmd = new SqlCommand(@"
+                        SELECT IIM.IMFLPF
+                        FROM [BD_SeguimientoPlanta].[BPCS].[IIM]
+                        WHERE IPROD = @prod;", sqlConn);
+                    cmd.Parameters.Add(new SqlParameter("@prod", System.Data.SqlDbType.VarChar, 50) { Value = prod });
+
+                    var obj = cmd.ExecuteScalar();
+                    conexionIngDoc.OpeCerrarConex();
+
+                    if (obj != null && float.TryParse(obj.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor))
+                    {
+                        for (int k = 0; k < lista.Count; k++)
+                        {
+                            var v = (int)Math.Round(lista[k] * factor);
+                            lista[k] = v;
+                            total["Total"][k] += v;
+                        }
+                    }
+                    else
+                    {
+                        for (int k = 0; k < lista.Count; k++)
+                            lista[k] = -1;
+                    }
+
+                    productoHoras[prod] = lista;
+                }
+
+                produccion[maq] = productoHoras;
+            }
+
+
+            if (produccion.ContainsKey("Total"))
+                produccion["Total"] = total;
+            else
+                produccion.Add("Total", total);
+
+            return produccion;
+        }
+
+        // --------------------------------------------------------------------
+        //  PRODUCCIÓN POR HORA (divide por horas trabajadas de Gespline)
+        // --------------------------------------------------------------------
+        public Dictionary<string, int> ProduccionActualPorMaquinaPorHora(
+            Dictionary<string, Dictionary<string, int>> produccion,
+            int Periodotiempo)
+        {
+            Dictionary<string, float> tiempo;
+            if (Periodotiempo == 1)
+                tiempo = gespline.tiempoTrabajadoActual1turno();
+            else if (Periodotiempo == 2)
+                tiempo = gespline.tiempoTrabajadoActual2turno(true);
+            else if (Periodotiempo == 3)
+                tiempo = gespline.tiempoTrabajadoActual2turno(false);
+            else
+                return null!;
+
+            var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var maq in produccion.Keys)
+            {
+                int suma = produccion[maq].Values.Sum();
+                if (tiempo.TryGetValue(maq, out var horas) && horas > 0)
+                    result[maq] = (int)Math.Round(suma / horas);
+            }
+            return result;
+        }
+
+        // --------------------------------------------------------------------
+        //  PRODUCCIÓN HORA a HORA: 1er turno (06:00–18:00)
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, List<int>>> obtenerLaProduccionActual1turno()
+        {
+            var maquinas = gespline.MaquinasGesplineActivos1turno() ?? new List<string>();
+            var prodMaqHora = new Dictionary<string, Dictionary<string, List<int>>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var m in maquinas)
+                prodMaqHora[(m ?? string.Empty).Trim()] = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+
+            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+
+            string sql = @"
+                SELECT RTRIM(ITH.THWRKC) THWRKC,
+                       RTRIM(ITH.TPROD)  TPROD,
+                       ITH.TQTY,
+                       ITH.THTIME
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE='R'
+                  AND ITH.TTDTE = ?
+                  AND ITH.THTIME >= 60000 AND ITH.THTIME <= 180000
+                  AND RTRIM(ITH.TWHS) = 'VVA'
+                ORDER BY ITH.THWRKC";
+
+            using var conn = _factory.CreateOpen();
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var maquina = (reader["THWRKC"] as string)?.Trim() ?? string.Empty;
+                var prod = (reader["TPROD"] as string)?.Trim() ?? string.Empty;
+                int qty = int.Parse(reader["TQTY"].ToString() ?? "0", CultureInfo.InvariantCulture);
+                int hora = int.Parse(reader["THTIME"].ToString() ?? "0", CultureInfo.InvariantCulture);
+
+                if (!prodMaqHora.TryGetValue(maquina, out var dicProd))
+                {
+                    dicProd = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+                    prodMaqHora[maquina] = dicProd;
+                }
+
+                if (!dicProd.TryGetValue(prod, out var lista))
+                {
+                    lista = Enumerable.Repeat(0, 13).ToList(); // 12 slots + total
+                    dicProd[prod] = lista;
+                }
+
+                // Buckets de 1 hora desde 06:00 hasta 18:00
+                if (hora >= 60000 && hora < 70000) lista[0] += qty;
+                else if (hora < 80000) lista[1] += qty;
+                else if (hora < 90000) lista[2] += qty;
+                else if (hora < 100000) lista[3] += qty;
+                else if (hora < 110000) lista[4] += qty;
+                else if (hora < 120000) lista[5] += qty;
+                else if (hora < 130000) lista[6] += qty;
+                else if (hora < 140000) lista[7] += qty;
+                else if (hora < 150000) lista[8] += qty;
+                else if (hora < 160000) lista[9] += qty;
+                else if (hora < 170000) lista[10] += qty;
+                else if (hora <= 180000) lista[11] += qty;
+
+                lista[12] += qty; // total
+            }
+
+            return prodMaqHora;
+        }
+
+        // Helpers ODBC para 2do turno (devuelven DataTable como en tu código original)
+        private DataTable obtenerLaProduccionActual2turnoAntes0am(bool band)
+        {
+            var table = new DataTable();
+            using var conn = _factory.CreateOpen();
+
+            if (band)
+            {
+                // 18:00–23:59 con fecha +1 (tu lógica original)
+                int fechaManiana = int.Parse(DateTime.Today.AddDays(+1).ToString("yyyyMMdd"));
+                string sql = @"
+                    SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
+                    FROM GBYLX835F/ITH ITH
+                    WHERE ITH.TTYPE='R'
+                      AND ITH.TTDTE >= ?
+                      AND RTRIM(ITH.TWHS)='VVA'
+                      AND ITH.THTIME >= 180000 AND ITH.THTIME < 240000
+                    ORDER BY ITH.THWRKC";
+                using var cmd = new OdbcCommand(sql, conn);
+                cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaManiana;
+                using var r = cmd.ExecuteReader();
+                table.Load(r);
+            }
+            else
+            {
+                // 18:00–23:59 del día actual (tu lógica original)
+                int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+                string sql = @"
+                    SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
+                    FROM GBYLX835F/ITH ITH
+                    WHERE ITH.TTYPE='R'
+                      AND ITH.TTDTE >= ?
+                      AND RTRIM(ITH.TWHS)='VVA'
+                      AND ITH.THTIME >= 180000 AND ITH.THTIME < 240000
+                    ORDER BY ITH.THWRKC";
+                using var cmd = new OdbcCommand(sql, conn);
+                cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
+                using var r = cmd.ExecuteReader();
+                table.Load(r);
+            }
+            return table;
+        }
+
+        private DataTable obtenerLaProduccionActual2turnoDespues0am()
+        {
+            var table = new DataTable();
+            using var conn = _factory.CreateOpen();
+
+            int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+            string sql = @"
+                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE='R'
+                  AND ITH.TTDTE >= ?
+                  AND RTRIM(ITH.TWHS)='VVA'
+                  AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
+                ORDER BY ITH.THWRKC";
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
+            using var r = cmd.ExecuteReader();
+            table.Load(r);
+
+            return table;
+        }
+
+        // --------------------------------------------------------------------
+        //  Composición de producción hora a hora para 2do turno (igual a tu lógica)
+        // --------------------------------------------------------------------
+        public Dictionary<string, Dictionary<string, List<int>>> obtenerLaProduccionActual2turno(bool band)
+        {
+            var prodMaqHora = new Dictionary<string, Dictionary<string, List<int>>>(StringComparer.OrdinalIgnoreCase);
+
+            var maquinas = band
+                ? gespline.MaquinasGesplineActivos2turnoAntes0am()
+                : gespline.MaquinasGesplineActivos2turnoDespues0am();
+
+            foreach (var m in (maquinas ?? new List<string>()))
+                prodMaqHora[(m ?? string.Empty).Trim()] = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+
+            var tablaA = this.obtenerLaProduccionActual2turnoAntes0am(band);
+            var tablaB = band ? null : this.obtenerLaProduccionActual2turnoDespues0am();
+
+            void acumular(DataTable dt, bool tramoNoche)
+            {
+                foreach (DataRow row in dt.Rows)
+                {
+                    var maquina = row["THWRKC"].ToString() ?? string.Empty;
+                    var prod = row["TPROD"].ToString() ?? string.Empty;
+                    var qty = int.Parse(row["TQTY"].ToString() ?? "0", CultureInfo.InvariantCulture);
+                    var hora = int.Parse(row["THTIME"].ToString() ?? "0", CultureInfo.InvariantCulture);
+
+                    if (!prodMaqHora.TryGetValue(maquina, out var dicProd))
+                    {
+                        dicProd = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+                        prodMaqHora[maquina] = dicProd;
+                    }
+
+                    if (!dicProd.TryGetValue(prod, out var lista))
+                    {
+                        lista = Enumerable.Repeat(0, 13).ToList();
+                        dicProd[prod] = lista;
+                    }
+
+                    if (tramoNoche)
+                    {
+                        // 18:00–23:59 => slots 0–5
+                        if (hora >= 180000 && hora < 190000) lista[0] += qty;
+                        else if (hora < 200000) lista[1] += qty;
+                        else if (hora < 210000) lista[2] += qty;
+                        else if (hora < 220000) lista[3] += qty;
+                        else if (hora < 230000) lista[4] += qty;
+                        else if (hora < 240000) lista[5] += qty;
+                    }
+                    else
+                    {
+                        // 00:00–05:59 => slots 6–11
+                        if (hora > 0 && hora < 10000) lista[6] += qty;
+                        else if (hora < 20000) lista[7] += qty;
+                        else if (hora < 30000) lista[8] += qty;
+                        else if (hora < 40000) lista[9] += qty;
+                        else if (hora < 50000) lista[10] += qty;
+                        else if (hora <= 60000) lista[11] += qty;
+                    }
+
+                    lista[12] += qty; // total
+                }
+            }
+
+            // tramo noche (18–24)
+            acumular(tablaA, true);
+
+            // tramo madrugada (0–6)
+            if (tablaB != null)
+                acumular(tablaB, false);
+
+            return prodMaqHora;
+        }
+
+        // --------------------------------------------------------------------
+        //  Productos actuales (todo el día) - ODBC, parametrizado
+        // --------------------------------------------------------------------
+        public Dictionary<string, string> obtenerLosProductosActuales()
+        {
+            var productos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+            string sql = @"
+                SELECT RTRIM(ITH.TPROD) TPROD, RTRIM(IIM.IDESC) IDESC, SUM(ITH.TQTY) SUMQ
+                FROM GBYLX835F/IIM IIM, GBYLX835F/ITH ITH
+                WHERE ITH.TPROD = IIM.IPROD
+                  AND ITH.TTDTE = ?
+                  AND ITH.TTYPE = 'R'
+                  AND RTRIM(ITH.TWHS) = 'VVA'
+                GROUP BY RTRIM(ITH.TPROD), RTRIM(IIM.IDESC);";
+
+            using var conn = _factory.CreateOpen();
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
+                var desc = (r["IDESC"] as string)?.Trim() ?? string.Empty;
+                if (!productos.ContainsKey(prod))
+                    productos.Add(prod, desc);
+            }
+            return productos;
+        }
+
+        // --------------------------------------------------------------------
+        //  Productos actuales por línea (centro de costo) - ODBC, parametrizado
+        // --------------------------------------------------------------------
+        public Dictionary<string, string> obtenerLosProductosActualesDeLinea(string centroCosto)
+        {
+            var productos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
+            string sql = @"
+                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, RTRIM(IIM.IDESC) IDESC
+                FROM GBYLX835F/IIM IIM, GBYLX835F/ITH ITH
+                WHERE ITH.TPROD = IIM.IPROD
+                  AND ITH.TTDTE = ?
+                  AND ITH.TTYPE = 'R'
+                  AND RTRIM(ITH.THWRKC) = ?
+                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD), RTRIM(IIM.IDESC);";
+
+            using var conn = _factory.CreateOpen();
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
+            cmd.Parameters.Add("WRKC", OdbcType.VarChar, 20).Value = centroCosto?.Trim() ?? string.Empty;
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
+                var desc = (r["IDESC"] as string)?.Trim() ?? string.Empty;
+                if (!productos.ContainsKey(prod))
+                    productos.Add(prod, desc);
+            }
+            return productos;
+        }
     }
 }
