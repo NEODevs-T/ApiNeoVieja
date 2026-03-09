@@ -267,98 +267,141 @@ string sql = @"
         // --------------------------------------------------------------------
         //  CONVERSIÓN A ESTÁNDAR (usa SQL Server para factor IIM.IMFLPF) - PARAMETRIZADO
         // --------------------------------------------------------------------
-        public Dictionary<string, Dictionary<string, int>> conversionTotalAEstandarPormaquinaYproducto(
-            Dictionary<string, Dictionary<string, int>> produccion)
+    public Dictionary<string, Dictionary<string, int>> conversionTotalAEstandarPormaquinaYproducto(
+        Dictionary<string, Dictionary<string, int>> produccion)
+    {
+        // Longitud típica de IIM.IPROD en AS400; ajusta si es distinta (ej. 15)
+        const int LenIPROD = 15;
+
+        foreach (var maq in produccion.Keys.ToList())
         {
-            var maquinas = produccion.Keys.ToList();
+            var productos = produccion[maq];
 
-            foreach (var maq in maquinas)
+            foreach (var prod in productos.Keys.ToList())
             {
-                var productos = produccion[maq];
-                var keysProd = productos.Keys.ToList();
+                var actual = productos[prod];
 
-                foreach (var prod in keysProd)
+                using var conn = _factory.CreateOpen();  // ODBC a AS400
+                using var cmd = new OdbcCommand(@"
+                    SELECT IMFLPF
+                    FROM GBYLX835F/IIM
+                    WHERE RTRIM(IPROD) = ?", conn);
+
+                // Opción A: VARCHar sin pad, ya que usamos RTRIM en la columna
+                cmd.Parameters.Add("IPROD", OdbcType.VarChar, LenIPROD).Value = (prod ?? string.Empty).Trim();
+
+                var obj = cmd.ExecuteScalar();
+
+                // Si no encontró fila, ponemos -1
+                if (obj == null || obj == DBNull.Value)
                 {
-                    var actual = productos[prod];
-
-                    using var sqlConn = conexionIngDoc.OpeAbrirConex();
-                    using var cmd = new SqlCommand(@"
-                        SELECT IIM.IMFLPF
-                        FROM [BD_SeguimientoPlanta].[BPCS].[IIM]
-                        WHERE IPROD = @prod;", sqlConn);
-                    cmd.Parameters.Add(new SqlParameter("@prod", System.Data.SqlDbType.VarChar, 50) { Value = prod });
-
-                    var obj = cmd.ExecuteScalar();
-                    conexionIngDoc.OpeCerrarConex();
-
-                    if (obj != null && float.TryParse(obj.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor))
-                        productos[prod] = (int)Math.Round(actual * factor);
-                    else
-                        productos[prod] = -1;
+                    productos[prod] = -1;
+                    continue;
                 }
-                produccion[maq] = productos;
+
+                // Normalizamos el factor y parseamos como DECIMAL
+                decimal factor;
+                {
+                    string raw = obj.ToString()?.Trim() ?? "";
+
+                    raw = raw.Replace(',', '.');                 // coma → punto
+                    if (raw.StartsWith(".")) raw = "0" + raw;    // .500 → 0.500
+
+                    if (!decimal.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out factor))
+                    {
+                        productos[prod] = -1;
+                        continue;
+                    }
+                }
+
+                if (factor > 0m)
+                    productos[prod] = (int)Math.Round(actual * factor, MidpointRounding.AwayFromZero);
+                else
+                    productos[prod] = -1;
             }
-            return produccion;
         }
+
+        return produccion;
+    }
 
         // --------------------------------------------------------------------
         //  CONVERSIÓN A ESTÁNDAR versión List<int> por horas (SQL Server) - PARAMETRIZADO
         // --------------------------------------------------------------------
-        public Dictionary<string, Dictionary<string, List<int>>> conversionTotalAEstandarPormaquinaYproducto(
-            Dictionary<string, Dictionary<string, List<int>>> produccion)
+
+    public Dictionary<string, Dictionary<string, List<int>>> conversionTotalAEstandarPormaquinaYproducto(
+        Dictionary<string, Dictionary<string, List<int>>> produccion)
+    {
+        const int LenIPROD = 15;
+
+        var total = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase)
         {
-            var total = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["Total"] = Enumerable.Repeat(0, 13).ToList()
-            };
+            ["Total"] = Enumerable.Repeat(0, 13).ToList()
+        };
 
-            foreach (var maq in produccion.Keys.ToList())
-            {
-                var productoHoras = produccion[maq];
+        foreach (var maq in produccion.Keys.ToList())
+        {
+            var productos = produccion[maq];
 
-                foreach (var prod in productoHoras.Keys.ToList())
+            foreach (var prod in productos.Keys.ToList())
+            {
+                var lista = productos[prod];
+
+                using var conn = _factory.CreateOpen(); // ODBC a AS400
+                using var cmd = new OdbcCommand(@"
+                    SELECT IMFLPF
+                    FROM GBYLX835F/IIM
+                    WHERE RTRIM(IPROD) = ?", conn);
+
+                cmd.Parameters.Add("IPROD", OdbcType.VarChar, LenIPROD).Value = (prod ?? string.Empty).Trim();
+
+                var obj = cmd.ExecuteScalar();
+
+                if (obj == null || obj == DBNull.Value)
                 {
-                    var lista = productoHoras[prod];
-
-                    using var sqlConn = conexionIngDoc.OpeAbrirConex();
-                    using var cmd = new SqlCommand(@"
-                        SELECT IIM.IMFLPF
-                        FROM [BD_SeguimientoPlanta].[BPCS].[IIM]
-                        WHERE IPROD = @prod;", sqlConn);
-                    cmd.Parameters.Add(new SqlParameter("@prod", System.Data.SqlDbType.VarChar, 50) { Value = prod });
-
-                    var obj = cmd.ExecuteScalar();
-                    conexionIngDoc.OpeCerrarConex();
-
-                    if (obj != null && float.TryParse(obj.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor))
-                    {
-                        for (int k = 0; k < lista.Count; k++)
-                        {
-                            var v = (int)Math.Round(lista[k] * factor);
-                            lista[k] = v;
-                            total["Total"][k] += v;
-                        }
-                    }
-                    else
-                    {
-                        for (int k = 0; k < lista.Count; k++)
-                            lista[k] = -1;
-                    }
-
-                    productoHoras[prod] = lista;
+                    for (int k = 0; k < lista.Count; k++) lista[k] = -1;
+                    productos[prod] = lista;
+                    continue;
                 }
 
-                produccion[maq] = productoHoras;
+                decimal factor;
+                {
+                    string raw = obj.ToString()?.Trim() ?? "";
+                    raw = raw.Replace(',', '.');
+                    if (raw.StartsWith(".")) raw = "0" + raw;
+
+                    if (!decimal.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out factor))
+                    {
+                        for (int k = 0; k < lista.Count; k++) lista[k] = -1;
+                        productos[prod] = lista;
+                        continue;
+                    }
+                }
+
+                if (factor > 0m)
+                {
+                    for (int k = 0; k < lista.Count; k++)
+                    {
+                        var v = (int)Math.Round(lista[k] * factor, MidpointRounding.AwayFromZero);
+                        lista[k] = v;
+                        total["Total"][k] += v;
+                    }
+                }
+                else
+                {
+                    for (int k = 0; k < lista.Count; k++) lista[k] = -1;
+                }
+
+                productos[prod] = lista;
             }
-
-
-            if (produccion.ContainsKey("Total"))
-                produccion["Total"] = total;
-            else
-                produccion.Add("Total", total);
-
-            return produccion;
         }
+
+        if (produccion.ContainsKey("Total"))
+            produccion["Total"] = total;
+        else
+            produccion.Add("Total", total);
+
+        return produccion;
+    }
 
         // --------------------------------------------------------------------
         //  PRODUCCIÓN POR HORA (divide por horas trabajadas de Gespline)
