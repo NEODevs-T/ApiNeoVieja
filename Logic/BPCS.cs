@@ -95,19 +95,19 @@ namespace ConsultasSQL.Logic
             int timeStart = 60000;    // 06:00:00
             int timeEnd = 180000;     // 18:00:00 (exclusivo)
 
-string sql = @"
-    SELECT 
-        RTRIM(ITH.THWRKC) AS THWRKC,
-        RTRIM(ITH.TPROD)  AS TPROD,
-        SUM(ITH.TQTY)     AS PRODUCCION
-    FROM GBYLX835F/ITH ITH
-    WHERE ITH.TTYPE = 'R'
-      AND ITH.TTDTE = ?
-      AND RTRIM(ITH.TWHS) = ?
-      AND ITH.THTIME >= ? AND ITH.THTIME < ?
-    GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
-    ORDER BY RTRIM(ITH.THWRKC)
-";
+            string sql = @"
+                SELECT 
+                    RTRIM(ITH.THWRKC) AS THWRKC,
+                    RTRIM(ITH.TPROD)  AS TPROD,
+                    SUM(ITH.TQTY)     AS PRODUCCION
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE = 'R'
+                AND ITH.TTDTE = ?
+                AND RTRIM(ITH.TWHS) = ?
+                AND ITH.THTIME >= ? AND ITH.THTIME < ?
+                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
+                ORDER BY RTRIM(ITH.THWRKC)
+            ";
 
             using var conn = _factory.CreateOpen();
             using var cmd = new OdbcCommand(sql, conn);
@@ -166,9 +166,9 @@ string sql = @"
                 SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
                 FROM GBYLX835F/ITH ITH
                 WHERE ITH.TTYPE='R'
-                  AND ITH.TTDTE = ?
-                  AND RTRIM(ITH.TWHS) = ?
-                  AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
+                    AND ITH.TTDTE = ?
+                    AND RTRIM(ITH.TWHS) = ?
+                    AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
                 GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
                 ORDER BY RTRIM(ITH.THWRKC)";
             using (var cmdA = new OdbcCommand(sqlA, conn))
@@ -194,9 +194,9 @@ string sql = @"
                 SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
                 FROM GBYLX835F/ITH ITH
                 WHERE ITH.TTYPE='R'
-                  AND ITH.TTDTE = ?
-                  AND RTRIM(ITH.TWHS) = ?
-                  AND ITH.THTIME >= 180000 AND ITH.THTIME < 235959
+                    AND ITH.TTDTE = ?
+                    AND RTRIM(ITH.TWHS) = ?
+                    AND ITH.THTIME >= 180000 AND ITH.THTIME < 235959
                 GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
                 ORDER BY RTRIM(ITH.THWRKC)";
             using (var cmdB = new OdbcCommand(sqlB, conn))
@@ -237,9 +237,9 @@ string sql = @"
                 SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
                 FROM GBYLX835F/ITH ITH
                 WHERE ITH.TTYPE='R'
-                  AND ITH.TTDTE = ?
-                  AND RTRIM(ITH.TWHS) = ?
-                  AND ITH.THTIME >= 180000 AND ITH.THTIME <= 235959
+                    AND ITH.TTDTE = ?
+                    AND RTRIM(ITH.TWHS) = ?
+                    AND ITH.THTIME >= 180000 AND ITH.THTIME <= 235959
                 GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
                 ORDER BY RTRIM(ITH.THWRKC)";
 
@@ -432,72 +432,104 @@ string sql = @"
 
         // --------------------------------------------------------------------
         //  PRODUCCIÓN HORA a HORA: 1er turno (06:00–18:00)
-        // --------------------------------------------------------------------
-        public Dictionary<string, Dictionary<string, List<int>>> obtenerLaProduccionActual1turno()
+            // --------------------------------------------------------------------
+    public Dictionary<string, Dictionary<string, List<int>>> obtenerLaProduccionActual1turno()
+    {
+        // 1) Construcción del diccionario base con todas las máquinas activas
+        var maquinas = gespline.MaquinasGesplineActivos1turno() ?? new List<string>();
+        var prodMaqHora = new Dictionary<string, Dictionary<string, List<int>>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in maquinas)
+            prodMaqHora[(m ?? string.Empty).Trim()] = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+
+        // 2) Parámetros
+        int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"), CultureInfo.InvariantCulture);
+        const int timeStart = 60000;   // 06:00:00  → inclusivo
+        const int timeEnd   = 180000;  // 18:00:00  → exclusivo
+        const string whs    = "VVA";   // almacén
+
+        // 3) Consulta ODBC a AS400, todo parametrizado
+        string sql = @"
+            SELECT 
+                RTRIM(ITH.THWRKC) AS THWRKC,
+                RTRIM(ITH.TPROD)  AS TPROD,
+                ITH.TQTY          AS TQTY,
+                ITH.THTIME        AS THTIME
+            FROM GBYLX835F/ITH ITH
+            WHERE ITH.TTYPE = 'R'
+            AND ITH.TTDTE = ?
+            AND ITH.THTIME >= ? AND ITH.THTIME < ?
+            AND RTRIM(ITH.TWHS) = ?
+            ORDER BY ITH.THWRKC, ITH.THTIME";
+
+        using var conn = _factory.CreateOpen();             // ODBC a AS400
+        using var cmd  = new OdbcCommand(sql, conn);
+        cmd.CommandTimeout = 120;
+
+        cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
+        cmd.Parameters.Add("TINI",  OdbcType.Int).Value = timeStart;
+        cmd.Parameters.Add("TFIN",  OdbcType.Int).Value = timeEnd;      // fin exclusivo
+        cmd.Parameters.Add("TWHS",  OdbcType.VarChar, 10).Value = whs;
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
         {
-            var maquinas = gespline.MaquinasGesplineActivos1turno() ?? new List<string>();
-            var prodMaqHora = new Dictionary<string, Dictionary<string, List<int>>>(StringComparer.OrdinalIgnoreCase);
+            var maquina = (reader["THWRKC"] as string)?.Trim() ?? string.Empty;
+            var prod    = (reader["TPROD"]  as string)?.Trim() ?? string.Empty;
 
-            foreach (var m in maquinas)
-                prodMaqHora[(m ?? string.Empty).Trim()] = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
-
-            int fechaInt = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
-
-            string sql = @"
-                SELECT RTRIM(ITH.THWRKC) THWRKC,
-                       RTRIM(ITH.TPROD)  TPROD,
-                       ITH.TQTY,
-                       ITH.THTIME
-                FROM GBYLX835F/ITH ITH
-                WHERE ITH.TTYPE='R'
-                  AND ITH.TTDTE = ?
-                  AND ITH.THTIME >= 60000 AND ITH.THTIME <= 180000
-                  AND RTRIM(ITH.TWHS) = 'VVA'
-                ORDER BY ITH.THWRKC";
-
-            using var conn = _factory.CreateOpen();
-            using var cmd = new OdbcCommand(sql, conn);
-            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaInt;
-
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            // TQTY en ITH puede ser DEC(15,5) en algunos AS400: convierto con decimal y luego a int
+            int qty = 0;
+            if (reader["TQTY"] != DBNull.Value)
             {
-                var maquina = (reader["THWRKC"] as string)?.Trim() ?? string.Empty;
-                var prod = (reader["TPROD"] as string)?.Trim() ?? string.Empty;
-                int qty = int.Parse(reader["TQTY"].ToString() ?? "0", CultureInfo.InvariantCulture);
-                int hora = int.Parse(reader["THTIME"].ToString() ?? "0", CultureInfo.InvariantCulture);
-
-                if (!prodMaqHora.TryGetValue(maquina, out var dicProd))
-                {
-                    dicProd = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
-                    prodMaqHora[maquina] = dicProd;
-                }
-
-                if (!dicProd.TryGetValue(prod, out var lista))
-                {
-                    lista = Enumerable.Repeat(0, 13).ToList(); // 12 slots + total
-                    dicProd[prod] = lista;
-                }
-
-                // Buckets de 1 hora desde 06:00 hasta 18:00
-                if (hora >= 60000 && hora < 70000) lista[0] += qty;
-                else if (hora < 80000) lista[1] += qty;
-                else if (hora < 90000) lista[2] += qty;
-                else if (hora < 100000) lista[3] += qty;
-                else if (hora < 110000) lista[4] += qty;
-                else if (hora < 120000) lista[5] += qty;
-                else if (hora < 130000) lista[6] += qty;
-                else if (hora < 140000) lista[7] += qty;
-                else if (hora < 150000) lista[8] += qty;
-                else if (hora < 160000) lista[9] += qty;
-                else if (hora < 170000) lista[10] += qty;
-                else if (hora <= 180000) lista[11] += qty;
-
-                lista[12] += qty; // total
+                var decQty = Convert.ToDecimal(reader["TQTY"], CultureInfo.InvariantCulture);
+                qty = Convert.ToInt32(Math.Round(decQty, MidpointRounding.AwayFromZero));
             }
 
-            return prodMaqHora;
+            int hora = 0;
+            if (reader["THTIME"] != DBNull.Value)
+                hora = Convert.ToInt32(reader["THTIME"], CultureInfo.InvariantCulture);
+
+            if (!prodMaqHora.TryGetValue(maquina, out var dicProd))
+            {
+                dicProd = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+                prodMaqHora[maquina] = dicProd;
+            }
+
+            if (!dicProd.TryGetValue(prod, out var lista))
+            {
+                lista = Enumerable.Repeat(0, 13).ToList(); // [12 horas + total]
+                dicProd[prod] = lista;
+            }
+
+            // 4) Buckets de 1 hora desde 06:00 hasta 18:00 (18:00 es fin EXCLUSIVO)
+            // 06:00-06:59 → idx 0; 07:00-07:59 → idx 1; ...; 17:00-17:59 → idx 11
+            int idx = -1;
+            if (hora >= 60000 && hora < 70000) idx = 0;
+            else if (hora < 80000)  idx = 1;
+            else if (hora < 90000)  idx = 2;
+            else if (hora < 100000) idx = 3;
+            else if (hora < 110000) idx = 4;
+            else if (hora < 120000) idx = 5;
+            else if (hora < 130000) idx = 6;
+            else if (hora < 140000) idx = 7;
+            else if (hora < 150000) idx = 8;
+            else if (hora < 160000) idx = 9;
+            else if (hora < 170000) idx = 10;
+            else if (hora < 180000) idx = 11; // fin exclusivo
+
+            if (idx >= 0)
+            {
+                lista[idx]  += qty;
+                lista[12]   += qty;  // total
+            }
         }
+
+        // 5) Asegurar que todas las máquinas queden presentes (aunque vacías)
+        foreach (var m in maquinas.Select(x => (x ?? string.Empty).Trim()))
+            if (!prodMaqHora.ContainsKey(m))
+                prodMaqHora[m] = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+
+        return prodMaqHora;
+    }
 
         // Helpers ODBC para 2do turno (devuelven DataTable como en tu código original)
         private DataTable obtenerLaProduccionActual2turnoAntes0am(bool band)
@@ -513,9 +545,9 @@ string sql = @"
                     SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
                     FROM GBYLX835F/ITH ITH
                     WHERE ITH.TTYPE='R'
-                      AND ITH.TTDTE >= ?
-                      AND RTRIM(ITH.TWHS)='VVA'
-                      AND ITH.THTIME >= 180000 AND ITH.THTIME < 240000
+                        AND ITH.TTDTE >= ?
+                        AND RTRIM(ITH.TWHS)='VVA'
+                        AND ITH.THTIME >= 180000 AND ITH.THTIME < 240000
                     ORDER BY ITH.THWRKC";
                 using var cmd = new OdbcCommand(sql, conn);
                 cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaManiana;
@@ -530,9 +562,9 @@ string sql = @"
                     SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
                     FROM GBYLX835F/ITH ITH
                     WHERE ITH.TTYPE='R'
-                      AND ITH.TTDTE >= ?
-                      AND RTRIM(ITH.TWHS)='VVA'
-                      AND ITH.THTIME >= 180000 AND ITH.THTIME < 240000
+                        AND ITH.TTDTE >= ?
+                        AND RTRIM(ITH.TWHS)='VVA'
+                        AND ITH.THTIME >= 180000 AND ITH.THTIME < 240000
                     ORDER BY ITH.THWRKC";
                 using var cmd = new OdbcCommand(sql, conn);
                 cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
@@ -552,9 +584,9 @@ string sql = @"
                 SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
                 FROM GBYLX835F/ITH ITH
                 WHERE ITH.TTYPE='R'
-                  AND ITH.TTDTE >= ?
-                  AND RTRIM(ITH.TWHS)='VVA'
-                  AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
+                    AND ITH.TTDTE >= ?
+                    AND RTRIM(ITH.TWHS)='VVA'
+                    AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
                 ORDER BY ITH.THWRKC";
             using var cmd = new OdbcCommand(sql, conn);
             cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
@@ -649,9 +681,9 @@ string sql = @"
                 SELECT RTRIM(ITH.TPROD) TPROD, RTRIM(IIM.IDESC) IDESC, SUM(ITH.TQTY) SUMQ
                 FROM GBYLX835F/IIM IIM, GBYLX835F/ITH ITH
                 WHERE ITH.TPROD = IIM.IPROD
-                  AND ITH.TTDTE = ?
-                  AND ITH.TTYPE = 'R'
-                  AND RTRIM(ITH.TWHS) = 'VVA'
+                    AND ITH.TTDTE = ?
+                    AND ITH.TTYPE = 'R'
+                    AND RTRIM(ITH.TWHS) = 'VVA'
                 GROUP BY RTRIM(ITH.TPROD), RTRIM(IIM.IDESC);";
 
             using var conn = _factory.CreateOpen();
@@ -680,9 +712,9 @@ string sql = @"
                 SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, RTRIM(IIM.IDESC) IDESC
                 FROM GBYLX835F/IIM IIM, GBYLX835F/ITH ITH
                 WHERE ITH.TPROD = IIM.IPROD
-                  AND ITH.TTDTE = ?
-                  AND ITH.TTYPE = 'R'
-                  AND RTRIM(ITH.THWRKC) = ?
+                    AND ITH.TTDTE = ?
+                    AND ITH.TTYPE = 'R'
+                    AND RTRIM(ITH.THWRKC) = ?
                 GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD), RTRIM(IIM.IDESC);";
 
             using var conn = _factory.CreateOpen();
