@@ -614,14 +614,42 @@ namespace ConsultasSQL.Logic
             var tablaA = this.obtenerLaProduccionActual2turnoAntes0am(band);
             var tablaB = band ? null : this.obtenerLaProduccionActual2turnoDespues0am();
 
+            static int? BucketNoche(int hhmmss)
+            {
+                if (hhmmss < 180000 || hhmmss >= 240000) return null;
+
+                var hour = hhmmss / 10000;
+                return hour - 18;
+            }
+
+            static int? BucketMadrugada(int hhmmss)
+            {
+                if (hhmmss < 0 || hhmmss >= 60000) return null;
+
+                var hour = hhmmss / 10000;
+                return 6 + hour;
+            }
+
             void acumular(DataTable dt, bool tramoNoche)
             {
+                if (dt == null || dt.Rows.Count == 0) return;
+
                 foreach (DataRow row in dt.Rows)
                 {
-                    var maquina = row["THWRKC"].ToString() ?? string.Empty;
-                    var prod = row["TPROD"].ToString() ?? string.Empty;
-                    var qty = int.Parse(row["TQTY"].ToString() ?? "0", CultureInfo.InvariantCulture);
-                    var hora = int.Parse(row["THTIME"].ToString() ?? "0", CultureInfo.InvariantCulture);
+                    var maquina = (row["THWRKC"].ToString() ?? string.Empty).Trim();
+                    var prod = (row["TPROD"].ToString() ?? string.Empty).Trim();
+
+                    var qty = 0;
+
+                    if (row["TQTY"] != DBNull.Value)
+                    {
+                        var dec = Convert.ToDecimal(row["TQTY"], CultureInfo.InvariantCulture);
+                        qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
+                    }
+
+                    int hora = 0;
+                    if(row["THTIME"] != DBNull.Value)
+                        hora = Convert.ToInt32(row["THTIME"], CultureInfo.InvariantCulture);
 
                     if (!prodMaqHora.TryGetValue(maquina, out var dicProd))
                     {
@@ -635,37 +663,25 @@ namespace ConsultasSQL.Logic
                         dicProd[prod] = lista;
                     }
 
-                    if (tramoNoche)
+                    int? idx = tramoNoche ? BucketNoche(hora) : BucketMadrugada(hora);
+                    if (idx.HasValue)
                     {
-                        // 18:00–23:59 => slots 0–5
-                        if (hora >= 180000 && hora < 190000) lista[0] += qty;
-                        else if (hora < 200000) lista[1] += qty;
-                        else if (hora < 210000) lista[2] += qty;
-                        else if (hora < 220000) lista[3] += qty;
-                        else if (hora < 230000) lista[4] += qty;
-                        else if (hora < 240000) lista[5] += qty;
+                        lista[idx.Value] += qty;
+                        lista[12] += qty;
                     }
-                    else
-                    {
-                        // 00:00–05:59 => slots 6–11
-                        if (hora > 0 && hora < 10000) lista[6] += qty;
-                        else if (hora < 20000) lista[7] += qty;
-                        else if (hora < 30000) lista[8] += qty;
-                        else if (hora < 40000) lista[9] += qty;
-                        else if (hora < 50000) lista[10] += qty;
-                        else if (hora <= 60000) lista[11] += qty;
-                    }
-
-                    lista[12] += qty; // total
                 }
             }
 
-            // tramo noche (18–24)
-            acumular(tablaA, true);
+            acumular(tablaA, tramoNoche: true);
 
-            // tramo madrugada (0–6)
             if (tablaB != null)
-                acumular(tablaB, false);
+                acumular(tablaB, tramoNoche : false);
+            
+            foreach (var m in (maquinas ?? new List<string>()).Select(x => (x ?? string.Empty).Trim()))
+
+                if(!prodMaqHora.ContainsKey(m))
+                    prodMaqHora[m] = new Dictionary<string, List<int>> (StringComparer.OrdinalIgnoreCase);
+
 
             return prodMaqHora;
         }
