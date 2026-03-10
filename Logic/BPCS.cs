@@ -156,70 +156,55 @@ namespace ConsultasSQL.Logic
             var maquinas = gespline.MaquinasGesplineActivos2turnoDespues0am() ?? new List<string>();
             foreach (var m in maquinas) produccion[(m ?? string.Empty).Trim()] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
-            string whs = "VVA";
+            int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"), CultureInfo.InvariantCulture);
+            const string whs = "VVA";
+            const int timeStart = 0;
+            const int timeEnd = 60000;
+
+            string sql = @"
+                SELECT 
+                    RTRIM(ITH.THWRKC) AS THWRKC, 
+                    RTRIM(ITH.TPROD) AS TPROD, 
+                    SUM(ITH.TQTY) PRODUCCION
+                FROM GBYLX835F/ITH ITH
+                WHERE ITH.TTYPE='R'
+                    AND ITH.TTDTE = ?
+                    AND RTRIM(ITH.TWHS) = ?
+                    AND ITH.THTIME >= ? AND ITH.THTIME < ?
+                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
+                ORDER BY RTRIM(ITH.THWRKC)";
 
             using var conn = _factory.CreateOpen();
+            using var cmd = new OdbcCommand(sql, conn);
+            cmd.CommandTimeout = 120;
 
-            // A) 00:00:00–05:59:59 del día actual
-            string sqlA = @"
-                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
-                FROM GBYLX835F/ITH ITH
-                WHERE ITH.TTYPE='R'
-                    AND ITH.TTDTE = ?
-                    AND RTRIM(ITH.TWHS) = ?
-                    AND ITH.THTIME >= 0 AND ITH.THTIME < 60000
-                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
-                ORDER BY RTRIM(ITH.THWRKC)";
-            using (var cmdA = new OdbcCommand(sqlA, conn))
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
+            cmd.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
+            cmd.Parameters.Add("TINI", OdbcType.Int).Value = timeStart;
+            cmd.Parameters.Add("TFIN", OdbcType.Int).Value = timeEnd;
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
             {
-                cmdA.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
-                cmdA.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
-                using var rA = cmdA.ExecuteReader();
-                while (rA.Read())
+                var wrkc = (r["THWRKC"] as string)?.Trim() ?? string.Empty;
+                var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
+                
+                if(!produccion.TryGetValue(wrkc, out var dict))
+                    continue;
+                
+                int qty = 0;
+                if(r["PRODUCCION"] != DBNull.Value)
                 {
-                    var wrkc = (rA["THWRKC"] as string)?.Trim() ?? string.Empty;
-                    var prod = (rA["TPROD"] as string)?.Trim() ?? string.Empty;
-                    var dec = Convert.ToDecimal(rA["PRODUCCION"], CultureInfo.InvariantCulture);
-                    var qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
+                    var dec = Convert.ToDecimal(r["PRODUCCION"], CultureInfo.InvariantCulture);
+                    qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
+                }                
+                
+                if (qty == 0) continue;
 
-                    if (!produccion.TryGetValue(wrkc, out var dict))
-                        continue; // restringimos a máquinas activas declaradas
-                    dict[prod] = qty;
-                }
-            }
-
-            // B) 18:00:00–23:59:59 del día actual
-            string sqlB = @"
-                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
-                FROM GBYLX835F/ITH ITH
-                WHERE ITH.TTYPE='R'
-                    AND ITH.TTDTE = ?
-                    AND RTRIM(ITH.TWHS) = ?
-                    AND ITH.THTIME >= 180000 AND ITH.THTIME < 235959
-                GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
-                ORDER BY RTRIM(ITH.THWRKC)";
-            using (var cmdB = new OdbcCommand(sqlB, conn))
-            {
-                cmdB.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
-                cmdB.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
-                using var rB = cmdB.ExecuteReader();
-                while (rB.Read())
-                {
-                    var wrkc = (rB["THWRKC"] as string)?.Trim() ?? string.Empty;
-                    var prod = (rB["TPROD"] as string)?.Trim() ?? string.Empty;
-                    var dec = Convert.ToDecimal(rB["PRODUCCION"], CultureInfo.InvariantCulture);
-                    var qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
-
-                    if (!produccion.TryGetValue(wrkc, out var dict))
-                        continue;
-
-                    dict[prod] = dict.ContainsKey(prod) ? dict[prod] + qty : qty;
-                }
-            }
-
-            return produccion;
-        }
+                dict[prod] = dict.ContainsKey(prod) ? dict[prod] + qty : qty;
+                }           
+        return produccion;
+    }
 
         // --------------------------------------------------------------------
         //  2do TURNO (antes de 0 am): 18:00–23:59 pero usando la FECHA +1 (como en tu lógica original)
@@ -230,34 +215,51 @@ namespace ConsultasSQL.Logic
             var maquinas = gespline.MaquinasGesplineActivos2turnoAntes0am() ?? new List<string>();
             foreach (var m in maquinas) produccion[(m ?? string.Empty).Trim()] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            int fechaManiana = int.Parse(DateTime.Today.AddDays(+1).ToString("yyyyMMdd"));
-            string whs = "VVA";
+            int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"), CultureInfo.InvariantCulture);
+            //int fechaAyer = int.Parse(DateTime.Today.AddDays(-1).ToString("yyyyMMdd"), CultureInfo.InvariantCulture);
+            const string whs = "VVA";
+            const int timeStart = 180000;
+            const int timeEnd = 240000;
 
             string sql = @"
-                SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, SUM(ITH.TQTY) PRODUCCION
+                SELECT 
+                    RTRIM(ITH.THWRKC) AS THWRKC, 
+                    RTRIM(ITH.TPROD) AS TPROD, 
+                    SUM(ITH.TQTY) AS PRODUCCION
                 FROM GBYLX835F/ITH ITH
                 WHERE ITH.TTYPE='R'
                     AND ITH.TTDTE = ?
                     AND RTRIM(ITH.TWHS) = ?
-                    AND ITH.THTIME >= 180000 AND ITH.THTIME <= 235959
+                    AND ITH.THTIME >= ? AND ITH.THTIME < ?
                 GROUP BY RTRIM(ITH.THWRKC), RTRIM(ITH.TPROD)
                 ORDER BY RTRIM(ITH.THWRKC)";
 
             using var conn = _factory.CreateOpen();
             using var cmd = new OdbcCommand(sql, conn);
-            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaManiana;
+            cmd.CommandTimeout = 120;
+
+            cmd.Parameters.Add("TTDTE", OdbcType.Int).Value = fechaHoy;
             cmd.Parameters.Add("TWHS", OdbcType.VarChar, 10).Value = whs;
+            cmd.Parameters.Add("TINI", OdbcType.Int).Value = timeStart;
+            cmd.Parameters.Add("TFIN", OdbcType.Int).Value = timeEnd;
 
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
                 var wrkc = (r["THWRKC"] as string)?.Trim() ?? string.Empty;
                 var prod = (r["TPROD"] as string)?.Trim() ?? string.Empty;
-                var dec = Convert.ToDecimal(r["PRODUCCION"], CultureInfo.InvariantCulture);
-                var qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
 
-                if (!produccion.TryGetValue(wrkc, out var dict))
+                if(!produccion.TryGetValue(wrkc, out var dict))
                     continue;
+                
+                int qty = 0;
+                if(r["PRODUCCION"] != DBNull.Value)
+                {
+                    var dec = Convert.ToDecimal(r["PRODUCCION"], CultureInfo.InvariantCulture);
+                    qty = Convert.ToInt32(Math.Round(dec, MidpointRounding.AwayFromZero));
+                }
+
+                if (qty == 0) continue;
 
                 dict[prod] = dict.ContainsKey(prod) ? dict[prod] + qty : qty;
             }
@@ -556,7 +558,6 @@ namespace ConsultasSQL.Logic
             }
             else
             {
-                // 18:00–23:59 del día actual (tu lógica original)
                 int fechaHoy = int.Parse(DateTime.Today.ToString("yyyyMMdd"));
                 string sql = @"
                     SELECT RTRIM(ITH.THWRKC) THWRKC, RTRIM(ITH.TPROD) TPROD, ITH.TQTY, ITH.THTIME
